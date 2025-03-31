@@ -23,10 +23,10 @@ async def publish():
                 )
                 amqp_message.publishing_id = j
                 await producer.send(
-                    stream= STREAM,
-                    publisher_name= "publisher_name",
+                    stream=STREAM,
+                    publisher_name="publisher_name",
                     # just 1000 messages will be inserted as messages with the same publishing_id and publisher_name will be discarded
-                    message = amqp_message,
+                    message=amqp_message,
                 )
 
         end_time = time.perf_counter()
