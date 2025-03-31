@@ -7,6 +7,7 @@ import asyncio
 import inspect
 import logging
 import ssl
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import partial
@@ -239,7 +240,7 @@ class Producer:
             # We can have multiple publishers sharing same connection, so their ids must be distinct
             publisher_id = await client.get_available_id()
 
-            reference = publisher_name or f"{stream}_publisher_{publisher_id}"
+            reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
             publisher = self._publishers[stream] = _Publisher(
                 id=publisher_id,
                 stream=stream,
