@@ -18,10 +18,15 @@ async def publish():
 
         for j in range(LOOP_1):
             for i in range(LOOP_2):
+                amqp_message = AMQPMessage(
+                    body=bytes("hello: {}".format(i), "utf-8"),
+                )
+                amqp_message.publishing_id = j
                 await producer.send(
-                    STREAM,
+                    stream= STREAM,
+                    publisher_name= "publisher_name",
                     # just 1000 messages will be inserted as messages with the same publishing_id and publisher_name will be discarded
-                    RawMessage(f"test_{j}".encode(), publshing_id=j),
+                    message = amqp_message,
                 )
 
         end_time = time.perf_counter()
