@@ -1028,6 +1028,7 @@ async def test_consume_filtering_with_reconnect(stream, producer_with_filtering:
     )
 
     captured: list[bytes] = []
+
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
         captured.append(bytes(msg))
 
