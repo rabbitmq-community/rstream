@@ -64,6 +64,7 @@ class _Subscriber:
     decoder: Callable[[bytes], Any]
     offset_type: OffsetType
     offset: int
+    filter_input: Optional[FilterConfiguration]
 
 
 class Consumer:
@@ -188,6 +189,7 @@ class Consumer:
         decoder: Optional[Callable[[bytes], Any]],
         offset_type: OffsetType,
         offset: Optional[int],
+        filter_input: Optional[FilterConfiguration],
     ) -> _Subscriber:
         logger.debug("_create_subscriber(): Create subscriber")
         client = await self._get_or_create_client(stream)
@@ -207,6 +209,7 @@ class Consumer:
             decoder=decoder,
             offset_type=offset_type,
             offset=offset or 0,
+            filter_input=filter_input,
         )
         return subscriber
 
@@ -238,6 +241,7 @@ class Consumer:
                 decoder=decoder,
                 offset_type=offset_specification.offset_type,
                 offset=offset_specification.offset,
+                filter_input=filter_input,
             )
 
             await subscriber.client.run_queue_listener_task(
@@ -520,6 +524,7 @@ class Consumer:
                     callback=curr_subscriber.callback,
                     decoder=curr_subscriber.decoder,
                     offset_specification=offset_specification,
+                    filter_input=curr_subscriber.filter_input,
                 )
             )
 

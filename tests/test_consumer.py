@@ -983,6 +983,70 @@ async def test_consume_filtering_match_unfiltered(
     await wait_for(lambda: len(captured) == 0)
 
 
+async def test_consume_filtering_with_reconnect(stream, producer_with_filtering: Producer):
+    publishing_done = asyncio.Event()
+    connection_broke = asyncio.Event()
+
+    async def task_to_publish_messages(connection_broke, producer):
+        for id in ("one", "two", "three", "four", "five"):
+            messages = []
+
+            if id == "three":
+                await connection_broke.wait()
+
+            for _ in range(50):
+                application_properties = {
+                    "id": id,
+                }
+                amqp_message = AMQPMessage(
+                    body="hello: {}".format(id),
+                    application_properties=application_properties,
+                )
+                messages.append(amqp_message)
+            # send_batch is synchronous. will wait till termination
+            await producer_with_filtering.send_batch(stream=stream, batch=messages)  # type: ignore
+        publishing_done.set()
+
+    async def on_connection_closed(disconnection_info):
+        # avoiding multiple connection closed to hit
+        if connection_broke.is_set():
+            return None
+
+        for disconnected_stream in disconnection_info.streams:
+            await consumer.reconnect_stream(disconnected_stream)
+
+        connection_broke.set()
+
+    consumer = Consumer(
+        host="localhost",
+        port=5552,
+        vhost="/",
+        username="guest",
+        password="guest",
+        connection_name="test-connection",
+        on_close_handler=on_connection_closed,
+    )
+
+    captured: list[bytes] = []
+    async def on_message(msg: AMQPMessage, message_context: MessageContext):
+        captured.append(bytes(msg))
+
+    asyncio.create_task(task_to_publish_messages(connection_broke, producer_with_filtering))
+    asyncio.create_task(task_to_delete_connection("test-connection"))
+    await consumer.subscribe(
+        stream=stream,
+        callback=on_message,
+        filter_input=FilterConfiguration(
+            values_to_filter=["two"],
+            match_unfiltered=False,
+        ),
+    )
+
+    await publishing_done.wait()
+    await asyncio.sleep(1)
+    assert len(captured) == 50
+
+
 async def test_consumer_metadata_update(consumer: Consumer) -> None:
     consumer_closed = False
     stream_disconnected = None
