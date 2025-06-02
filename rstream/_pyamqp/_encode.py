@@ -791,7 +791,7 @@ def encode_unknown(output: bytearray, value: Optional[object], **kwargs: Any) ->
     elif isinstance(value, float):
         encode_double(output, value, **kwargs)
     elif isinstance(value, int):
-        encode_int(output, value, **kwargs)
+        encode_long(output, value, **kwargs)
     elif isinstance(value, datetime):
         encode_timestamp(output, value, **kwargs)
     elif isinstance(value, list):
