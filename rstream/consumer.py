@@ -111,6 +111,7 @@ class Consumer:
         if self._connection_name is None:
             self._connection_name = "rstream-consumer"
         self._max_subscribers_by_connection = max_subscribers_by_connection
+        self.load_balancer_mode = load_balancer_mode
 
     @property
     async def default_client(self) -> Client:
@@ -167,10 +168,14 @@ class Consumer:
                 )
 
             leader, replicas = await (await self.default_client).query_leader_and_replicas(stream)
-            broker = random.choice(replicas) if replicas else leader
+            if self.load_balancer_mode:
+                addr = None
+            else:
+                broker = random.choice(replicas) if replicas else leader
+                addr = Addr(broker.host, broker.port)
             logger.debug("_get_or_create_client(): Getting/Creating connection")
             self._clients[stream] = await self._pool.get(
-                addr=Addr(broker.host, broker.port),
+                addr=addr,
                 connection_closed_handler=self._on_close_handler,
                 connection_name=self._connection_name,
                 stream=stream,
