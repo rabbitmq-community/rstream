@@ -725,6 +725,7 @@ class ClientPool:
         self._frame_max = frame_max
         self._heartbeat = heartbeat
         self._clients: dict[Addr, list[Client]] = defaultdict(list)
+        self._sasl_configuration_mechanism = sasl_configuration_mechanism
 
     async def get(
         self,
@@ -732,7 +733,7 @@ class ClientPool:
         addr: Optional[Addr] = None,
         connection_closed_handler: Optional[CB[OnClosedErrorInfo]] = None,
         stream: Optional[str] = None,
-        sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
+        sasl_configuration_mechanism: Optional[SlasMechanism] = None,
         max_clients_by_connections: int = 256,
     ) -> Client:
         """Get a client according to `addr` parameter
@@ -744,6 +745,7 @@ class ClientPool:
         and `load_balancer_mode` is ignored.
         """
         desired_addr = addr or self.addr
+        sasl_configuration_mechanism = sasl_configuration_mechanism or self._sasl_configuration_mechanism
 
         # check if at least one client of desired_addr is connected
         if desired_addr in self._clients:
@@ -785,10 +787,11 @@ class ClientPool:
         connection_name: Optional[str],
         addr: Addr,
         connection_closed_handler: Optional[CB[OnClosedErrorInfo]] = None,
-        sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
+        sasl_configuration_mechanism: Optional[SlasMechanism] = None,
         max_clients_by_connections: int = 256,
     ) -> Client:
         desired_host, desired_port = addr.host, str(addr.port)
+        sasl_configuration_mechanism = sasl_configuration_mechanism or self._sasl_configuration_mechanism
 
         connection_attempts = 0
 
@@ -823,10 +826,11 @@ class ClientPool:
         connection_name: Optional[str],
         addr: Addr,
         connection_closed_handler: Optional[CB[OnClosedErrorInfo]] = None,
-        sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
+        sasl_configuration_mechanism: Optional[SlasMechanism] = None,
         max_clients_by_connections: int = 256,
     ) -> Client:
         host, port = addr
+        sasl_configuration_mechanism = sasl_configuration_mechanism or self._sasl_configuration_mechanism
         client = Client(
             host=host,
             port=port,
