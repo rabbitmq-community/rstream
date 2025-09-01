@@ -32,7 +32,7 @@ from typing import (
 from typing_extensions import Buffer
 
 from . import performatives
-from .constants import INT32_MIN, INT32_MAX
+from .constants import INT32_MAX, INT32_MIN
 from .message import Message
 from .types import (
     TYPE,
