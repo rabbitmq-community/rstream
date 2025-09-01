@@ -32,6 +32,7 @@ from typing import (
 from typing_extensions import Buffer
 
 from . import performatives
+from .constants import INT32_MIN, INT32_MAX
 from .message import Message
 from .types import (
     TYPE,
@@ -792,7 +793,7 @@ def encode_unknown(output: bytearray, value: Optional[object], **kwargs: Any) ->
         encode_double(output, value, **kwargs)
     elif isinstance(value, int):
         # if the value fits within AMQP 1.0 32-bit signed integer bounds, encode as an int
-        if -2_147_483_648 <= value <= 2_147_483_647:
+        if INT32_MIN <= value <= INT32_MAX:
             encode_int(output, value, **kwargs)
         else:  # otherwise, we'll assume it fits in a 64-bit long
             encode_long(output, value, **kwargs)
