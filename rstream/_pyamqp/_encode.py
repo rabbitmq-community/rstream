@@ -791,7 +791,11 @@ def encode_unknown(output: bytearray, value: Optional[object], **kwargs: Any) ->
     elif isinstance(value, float):
         encode_double(output, value, **kwargs)
     elif isinstance(value, int):
-        encode_int(output, value, **kwargs)
+        # if the value fits within AMQP 1.0 32-bit signed integer bounds, encode as an int
+        if -2_147_483_648 <= value <= 2_147_483_647:
+            encode_int(output, value, **kwargs)
+        else:  # otherwise, we'll assume it fits in a 64-bit long
+            encode_long(output, value, **kwargs)
     elif isinstance(value, datetime):
         encode_timestamp(output, value, **kwargs)
     elif isinstance(value, list):
