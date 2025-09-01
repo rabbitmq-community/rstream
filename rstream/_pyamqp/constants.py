@@ -69,9 +69,9 @@ MAX_CHANNELS = 65535
 INCOMING_WINDOW = 64 * 1024
 OUTGOING_WINDOW = 64 * 1024
 
-#: Lower and upper bounds for a 32-bit integer. This is used to be able to differentiate between 32-bit int and
-#: 64-bit long values. It is ambiguous at encoding time when using type-checking alone to determine how to encode
-#: the value because python 3 does not differentiate between those int and long types.
+#: Lower and upper bounds for a signed 32-bit integer. This is used to be able to differentiate between 32-bit int
+#: and 64-bit long values. It is ambiguous at encoding time when using type-checking alone to determine how to
+#: encode the value because python 3 does not differentiate between int and long types.
 INT32_MIN = -2_147_483_648
 INT32_MAX = 2_147_483_647
 
