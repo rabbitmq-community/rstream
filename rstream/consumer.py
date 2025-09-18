@@ -102,7 +102,7 @@ class Consumer:
 
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}
-        self._subscribers: dict[str, _Subscriber] = {}
+        self._subscribers: dict[int, _Subscriber] = {}
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self._on_close_handler = on_close_handler
@@ -143,7 +143,7 @@ class Consumer:
         logger.debug("close(): Unsubscribe subscribers")
         for subscriber in list(self._subscribers.values()):
             if subscriber.client.is_connection_alive():
-                await self.unsubscribe(subscriber.reference)
+                await self.unsubscribe(subscriber.subscription_id)
 
         logger.debug("close(): Cleaning up structs")
         self._subscribers.clear()
@@ -197,14 +197,14 @@ class Consumer:
         # We can have multiple subscribers sharing same connection, so their ids must be distinct
         # subscription_id = len([s for s in self._subscribers.values() if s.client is client]) + 1
         subscription_id = await client.get_available_id()
-        reference = subscriber_name or f"{stream}_subscriber_{subscription_id}"
+        # reference = subscriber_name or f"{stream}_subscriber_{subscription_id}"
         decoder = decoder or (lambda x: x)
 
-        subscriber = self._subscribers[reference] = _Subscriber(
+        subscriber = self._subscribers[subscription_id] = _Subscriber(
             stream=stream,
             subscription_id=subscription_id,
             client=client,
-            reference=reference,
+            reference=subscriber_name,
             callback=callback,
             decoder=decoder,
             offset_type=offset_type,
@@ -307,9 +307,9 @@ class Consumer:
 
         return subscriber.reference
 
-    async def unsubscribe(self, subscriber_name: str) -> None:
+    async def unsubscribe(self, subscriber_id: int) -> None:
         logger.debug("unsubscribe(): UnSubscribing and removing handlers")
-        subscriber = self._subscribers[subscriber_name]
+        subscriber = self._subscribers[subscriber_id]
 
         await subscriber.client.stop_queue_listener_task(subscriber_name=subscriber_name)
         subscriber.client.remove_handler(
@@ -333,7 +333,7 @@ class Consumer:
             await self._clients[stream].remove_stream(stream)
             await self._clients[stream].free_available_id(subscriber.subscription_id)
 
-        del self._subscribers[subscriber_name]
+        del self._subscribers[subscriber.subscription_id]
 
     async def query_offset(self, stream: str, subscriber_name: str) -> int:
         if subscriber_name == "":
@@ -454,7 +454,7 @@ class Consumer:
     async def clean_up_subscribers(self, stream: str):
         for subscriber in list(self._subscribers.values()):
             if subscriber.stream == stream:
-                del self._subscribers[subscriber.reference]
+                del self._subscribers[subscriber.subscription_id]
 
     async def delete_stream(self, stream: str, missing_ok: bool = False) -> None:
         await self.clean_up_subscribers(stream)
