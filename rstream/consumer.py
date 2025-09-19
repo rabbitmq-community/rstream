@@ -245,7 +245,7 @@ class Consumer:
             )
 
             await subscriber.client.run_queue_listener_task(
-                subscriber_name=subscriber.reference,
+                subscriber_id=subscriber.subscription_id,
                 handler=partial(self._on_deliver, subscriber=subscriber, filter_value=filter_input),
             )
 
@@ -253,13 +253,13 @@ class Consumer:
         subscriber.client.add_handler(
             schema.Deliver,
             partial(self._on_deliver, subscriber=subscriber, filter_value=filter_input),
-            name=subscriber.reference,
+            name=str(subscriber.subscription_id),
         )
 
         subscriber.client.add_handler(
             schema.MetadataUpdate,
             partial(self._on_metadata_update),
-            name=subscriber.reference,
+            name=str(subscriber.subscription_id)
         )
 
         # to handle single-active-consumer
@@ -311,7 +311,7 @@ class Consumer:
         logger.debug("unsubscribe(): UnSubscribing and removing handlers")
         subscriber = self._subscribers[subscriber_id]
 
-        await subscriber.client.stop_queue_listener_task(subscriber_name=subscriber_name)
+        await subscriber.client.stop_queue_listener_task(subscriber_id=subscriber.subscription_id)
         subscriber.client.remove_handler(
             schema.Deliver,
             name=subscriber.reference,

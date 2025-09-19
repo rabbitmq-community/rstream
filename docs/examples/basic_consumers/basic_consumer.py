@@ -5,10 +5,14 @@ from rstream import (
     AMQPMessage,
     Consumer,
     MessageContext,
-    amqp_decoder,
+    amqp_decoder, ConsumerOffsetSpecification, OffsetType
 )
 
 STREAM = "my-test-stream"
+import logging
+
+logging.getLogger("rstream").setLevel(logging.INFO)
+logging.info("Starting consumer")
 
 
 async def consume():
@@ -18,6 +22,7 @@ async def consume():
         vhost="/",
         username="guest",
         password="guest",
+
     )
 
     loop = asyncio.get_event_loop()
@@ -29,8 +34,15 @@ async def consume():
         print("Got message: {} from stream {}, offset {}".format(msg, stream, offset))
 
     await consumer.start()
-    await consumer.subscribe(stream=STREAM, callback=on_message, decoder=amqp_decoder)
+    await consumer.subscribe(stream=STREAM,
+                             callback=on_message,
+                             decoder=amqp_decoder,
+                             offset_specification=ConsumerOffsetSpecification(OffsetType.FIRST, None))
     await consumer.run()
-
+    # sleep for 10 seconds
+    await asyncio.sleep(10)
+    logging.info("Stopping consumer")
+    consumer.stop()
+    logging.info("Consumer stopped")
 
 asyncio.run(consume())
