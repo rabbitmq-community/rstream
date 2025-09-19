@@ -86,7 +86,7 @@ class SuperStreamConsumer:
         self.max_retries = max_retries
         self._consumer: Optional[Consumer] = None
         self._stop_event = asyncio.Event()
-        self._subscribers: dict[str, str] = defaultdict(str)
+        self._subscribers: dict[str, int] = {}
         self._on_close_handler = on_close_handler
         self._connection_name = connection_name
         if self._connection_name is None:

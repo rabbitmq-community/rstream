@@ -27,9 +27,11 @@ CB = Annotated[Callable[[MT], Awaitable[Any]], "Message callback type"]
 
 
 class Metadata(abc.ABC):
+    @abc.abstractmethod
     async def partitions(self) -> list[str]:
         pass
 
+    @abc.abstractmethod
     async def routes(self, routing_key: str) -> list[str]:
         pass
 

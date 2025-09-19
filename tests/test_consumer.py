@@ -312,14 +312,15 @@ async def test_consume_with_resubscribe(stream: str, consumer: Consumer, produce
 
 async def test_consume_with_resubscribe_msg(stream: str, consumer: Consumer, producer: Producer) -> None:
     captured_by_first_consumer: list[bytes] = []
-    subscriber_name = await consumer.subscribe(
-        stream, callback=lambda message, message_context: captured_by_first_consumer.append(bytes(message))
+    subscriber_name="test-subscriber"
+    subscriber_id = await consumer.subscribe(
+        stream,subscriber_name=subscriber_name, callback=lambda message, message_context: captured_by_first_consumer.append(bytes(message))
     )
     for i in range(100):
         await producer.send_wait(stream, b"one")
     await wait_for(lambda: len(captured_by_first_consumer) >= 100)
 
-    await consumer.unsubscribe(subscriber_name)
+    await consumer.unsubscribe(subscriber_id)
 
     captured_by_second_consumer: list[bytes] = []
     await consumer.subscribe(
@@ -813,7 +814,7 @@ async def test_super_stream_consumer_connection_broke(super_stream: str) -> None
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
 
     asyncio.create_task(task_to_delete_connection("test-connection"))
 
@@ -1076,7 +1077,7 @@ async def test_consumer_metadata_update(consumer: Consumer) -> None:
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
 
     await consumer_metadata_update.start()
     await consumer_metadata_update.create_stream(stream)

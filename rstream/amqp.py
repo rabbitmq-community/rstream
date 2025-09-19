@@ -6,8 +6,6 @@ from ._pyamqp._decode import decode_payload
 from ._pyamqp._encode import encode_payload
 from ._pyamqp.message import Message
 
-# import uamqp
-
 
 class _MessageProtocol(Protocol):
     publishing_id: Optional[int] = None

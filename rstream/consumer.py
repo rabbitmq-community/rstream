@@ -53,6 +53,7 @@ class EventContext:
     consumer: Consumer
     subscriber_name: str
     reference: str
+    stream: str
 
 
 @dataclass
@@ -430,7 +431,7 @@ class Consumer:
 
         else:
             is_active = bool(frame.active)
-            event_context = EventContext(self, subscriber.reference, reference)
+            event_context = EventContext(self, subscriber.reference, reference, subscriber.stream)
             offset_specification = await consumer_update_listener(is_active, event_context)
             subscriber.offset_type = OffsetType(offset_specification.offset_type)
             subscriber.offset = offset_specification.offset
