@@ -228,12 +228,12 @@ async def test_consumer_resubscribe_when_not_consumed_events_in_queue(
 
     try:
         async with consumer:
-            subscriber_name = await consumer.subscribe(
+            subscriber_id = await consumer.subscribe(
                 stream=stream_name, callback=long_running_cb, initial_credit=10
             )
             await wait_for(lambda: processed_offsets_1.full())
 
-            await consumer.unsubscribe(subscriber_name)
+            await consumer.unsubscribe(subscriber_id)
 
             await consumer.subscribe(
                 stream=stream_name,
@@ -749,7 +749,7 @@ async def test_consumer_connection_broke(stream: str) -> None:
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal connection_broke
         connection_broke = True
-        nonlocal consumer_broke
+        # nonlocal consumer_broke
         nonlocal stream_disconnected
         stream_disconnected = disconnection_info.streams.pop()
 
@@ -765,8 +765,8 @@ async def test_consumer_connection_broke(stream: str) -> None:
         connection_name="test-connection",
     )
 
-    async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+    async def on_message(msg: AMQPMessage, message_context: MessageContext) -> None:
+        return None
 
     asyncio.create_task(task_to_delete_connection("test-connection"))
 
@@ -783,11 +783,11 @@ async def test_consumer_connection_broke(stream: str) -> None:
 async def test_super_stream_consumer_connection_broke(super_stream: str) -> None:
     connection_broke = False
     streams_disconnected: set[str] = set()
-    consumer_broke: Consumer
+    # consumer_broke: Consumer
 
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal connection_broke
-        nonlocal streams_disconnected
+        # nonlocal streams_disconnected
         # avoiding multiple connection closed to hit
         if connection_broke is True:
             for stream in disconnection_info.streams:
@@ -832,15 +832,15 @@ async def test_super_stream_consumer_connection_broke(super_stream: str) -> None
 async def test_super_stream_consumer_connection_broke_with_reconnect(super_stream: str) -> None:
     connection_broke = False
     streams_disconnected: set[str] = set()
-    consumer_broke: Consumer
+    # consumer_broke: Consumer
     offset_restart = 0
 
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         logger.warning("connection closed")
         nonlocal connection_broke
-        nonlocal streams_disconnected
+        # nonlocal streams_disconnected
         # avoiding multiple connection closed to hit
-        if connection_broke is True:
+        if connection_broke:
             for stream in disconnection_info.streams:
                 logger.warning("reconnecting")
                 streams_disconnected.add(stream)
@@ -852,6 +852,7 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
             streams_disconnected.add(stream)
             # start from stored offset
             await super_stream_consumer_broke.reconnect_stream(stream, offset_restart)
+        return None
 
     # Sending a few messages in the stream in order to be consumed
     super_stream_producer_broke = SuperStreamProducer(
@@ -866,7 +867,6 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
 
     await super_stream_producer_broke.start()
 
-    i = 0
     for i in range(0, 10000):
         amqp_message = AMQPMessage(
             body="hello: {}".format(i),
@@ -888,7 +888,7 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        nonlocal connection_broke
+        # nonlocal connection_broke
         message_context.consumer.get_stream(message_context.subscriber_name)
         # check after disconnection offset have been reset
         if connection_broke is True:
@@ -1057,7 +1057,7 @@ async def test_consumer_metadata_update(consumer: Consumer) -> None:
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal consumer_closed
 
-        nonlocal consumer_metadata_update
+        # nonlocal consumer_metadata_update
         nonlocal stream_disconnected
         stream_disconnected = disconnection_info.streams.pop()
 

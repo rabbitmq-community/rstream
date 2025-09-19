@@ -83,15 +83,13 @@ async def routing_extractor_key(message: AMQPMessage) -> str:
 async def on_message(
     msg: AMQPMessage, message_context: MessageContext, streams: list[str], offsets: list[int]
 ):
-    stream = message_context.consumer.get_stream(message_context.subscriber_name)
-    streams.append(stream)
+    streams.append(message_context.stream)
     offset = message_context.offset
     offsets.append(offset)
 
 
 async def on_message_sac(msg: AMQPMessage, message_context: MessageContext, streams: list[str]):
-    stream = message_context.consumer.get_stream(message_context.subscriber_name)
-    streams.append(stream)
+    streams.append(message_context.stream)
 
 
 async def run_consumer(
@@ -105,9 +103,7 @@ async def run_consumer(
     properties["super-stream"] = "test-super-stream"
 
     await super_stream_consumer.subscribe(
-        callback=lambda message, message_context: streams.append(
-            message_context.consumer.get_stream(message_context.subscriber_name)
-        ),
+        callback=lambda message, message_context: streams.append(message_context.stream),
         decoder=amqp_decoder,
         properties=properties,
         consumer_update_listener=consumer_update_listener,

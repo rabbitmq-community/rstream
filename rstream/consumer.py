@@ -45,6 +45,7 @@ class MessageContext:
     subscriber_name: str
     offset: int
     timestamp: int
+    stream: str
 
 
 @dataclass
@@ -69,22 +70,22 @@ class _Subscriber:
 
 class Consumer:
     def __init__(
-        self,
-        host: str,
-        port: int = 5552,
-        *,
-        ssl_context: Optional[ssl.SSLContext] = None,
-        vhost: str = "/",
-        username: str,
-        password: str,
-        frame_max: int = 1 * 1024 * 1024,
-        heartbeat: int = 60,
-        load_balancer_mode: bool = False,
-        max_retries: int = 20,
-        max_subscribers_by_connection: int = 256,
-        on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
-        connection_name: str = None,
-        sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
+            self,
+            host: str,
+            port: int = 5552,
+            *,
+            ssl_context: Optional[ssl.SSLContext] = None,
+            vhost: str = "/",
+            username: str,
+            password: str,
+            frame_max: int = 1 * 1024 * 1024,
+            heartbeat: int = 60,
+            load_balancer_mode: bool = False,
+            max_retries: int = 20,
+            max_subscribers_by_connection: int = 256,
+            on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
+            connection_name: str = None,
+            sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
     ):
         self._pool = ClientPool(
             host,
@@ -182,14 +183,14 @@ class Consumer:
         return self._clients[stream]
 
     async def _create_subscriber(
-        self,
-        stream: str,
-        subscriber_name: Optional[str],
-        callback: Callable[[AMQPMessage, MessageContext], Union[None, Awaitable[None]]],
-        decoder: Optional[Callable[[bytes], Any]],
-        offset_type: OffsetType,
-        offset: Optional[int],
-        filter_input: Optional[FilterConfiguration],
+            self,
+            stream: str,
+            subscriber_name: Optional[str],
+            callback: Callable[[AMQPMessage, MessageContext], Union[None, Awaitable[None]]],
+            decoder: Optional[Callable[[bytes], Any]],
+            offset_type: OffsetType,
+            offset: Optional[int],
+            filter_input: Optional[FilterConfiguration],
     ) -> _Subscriber:
         logger.debug("_create_subscriber(): Create subscriber")
         client = await self._get_or_create_client(stream)
@@ -214,20 +215,20 @@ class Consumer:
         return subscriber
 
     async def subscribe(
-        self,
-        stream: str,
-        callback: Callable[[AMQPMessage, MessageContext], Union[None, Awaitable[None]]],
-        *,
-        decoder: Optional[Callable[[bytes], MT]] = None,
-        offset_specification: Optional[ConsumerOffsetSpecification] = None,
-        initial_credit: int = 10,
-        properties: Optional[dict[str, Any]] = None,
-        subscriber_name: Optional[str] = None,
-        consumer_update_listener: Optional[
-            Callable[[bool, EventContext], Awaitable[OffsetSpecification]]
-        ] = None,
-        filter_input: Optional[FilterConfiguration] = None,
-    ) -> str:
+            self,
+            stream: str,
+            callback: Callable[[AMQPMessage, MessageContext], Union[None, Awaitable[None]]],
+            *,
+            decoder: Optional[Callable[[bytes], MT]] = None,
+            offset_specification: Optional[ConsumerOffsetSpecification] = None,
+            initial_credit: int = 10,
+            properties: Optional[dict[str, Any]] = None,
+            subscriber_name: Optional[str] = None,
+            consumer_update_listener: Optional[
+                Callable[[bool, EventContext], Awaitable[OffsetSpecification]]
+            ] = None,
+            filter_input: Optional[FilterConfiguration] = None,
+    ) -> int:
         logger.debug("Consumer subscribe()")
         if offset_specification is None:
             offset_specification = ConsumerOffsetSpecification(OffsetType.FIRST, None)
@@ -272,7 +273,7 @@ class Consumer:
                         reference=properties["name"],
                         consumer_update_listener=consumer_update_listener,
                     ),
-                    name=subscriber.reference,
+                    name=str(subscriber.subscription_id),
                 )
 
         if filter_input is not None:
@@ -303,7 +304,7 @@ class Consumer:
             properties=properties,
         )
 
-        return subscriber.reference
+        return subscriber.subscription_id
 
     async def unsubscribe(self, subscriber_id: int) -> None:
         logger.debug("unsubscribe(): UnSubscribing and removing handlers")
@@ -357,7 +358,7 @@ class Consumer:
 
     @staticmethod
     def _filter_messages(
-        frame: schema.Deliver, subscriber: _Subscriber, filter_value: Optional[FilterConfiguration] = None
+            frame: schema.Deliver, subscriber: _Subscriber, filter_value: Optional[FilterConfiguration] = None
     ) -> Iterator[tuple[int, bytes]]:
         min_deliverable_offset = -1
         is_filtered = True
@@ -381,7 +382,7 @@ class Consumer:
         subscriber.offset = frame.chunk_first_offset + frame.num_entries
 
     async def _on_deliver(
-        self, frame: schema.Deliver, subscriber: _Subscriber, filter_value: Optional[FilterConfiguration]
+            self, frame: schema.Deliver, subscriber: _Subscriber, filter_value: Optional[FilterConfiguration]
     ) -> None:
         if frame.subscription_id != subscriber.subscription_id:
             return
@@ -389,7 +390,7 @@ class Consumer:
         await subscriber.client.credit(subscriber.subscription_id, 1)
 
         for offset, message in self._filter_messages(frame, subscriber, filter_value):
-            message_context = MessageContext(self, subscriber.reference, offset, frame.timestamp)
+            message_context = MessageContext(self, subscriber.reference, offset, frame.timestamp, subscriber.stream)
 
             maybe_coro = subscriber.callback(subscriber.decoder(message), message_context)
             if maybe_coro is not None:
@@ -408,13 +409,13 @@ class Consumer:
                 await result
 
     async def _on_consumer_update_query_response(
-        self,
-        frame: schema.ConsumerUpdateResponse,
-        subscriber: _Subscriber,
-        reference: str,
-        consumer_update_listener: Optional[
-            Callable[[bool, EventContext], Awaitable[OffsetSpecification]]
-        ] = None,
+            self,
+            frame: schema.ConsumerUpdateResponse,
+            subscriber: _Subscriber,
+            reference: str,
+            consumer_update_listener: Optional[
+                Callable[[bool, EventContext], Awaitable[OffsetSpecification]]
+            ] = None,
     ) -> None:
         if frame.subscription_id != subscriber.subscription_id:
             return
@@ -434,10 +435,10 @@ class Consumer:
             await subscriber.client.consumer_update(frame.correlation_id, offset_specification)
 
     async def create_stream(
-        self,
-        stream: str,
-        arguments: Optional[dict[str, Any]] = None,
-        exists_ok: bool = False,
+            self,
+            stream: str,
+            arguments: Optional[dict[str, Any]] = None,
+            exists_ok: bool = False,
     ) -> None:
         async with self._lock:
             try:
@@ -476,15 +477,15 @@ class Consumer:
 
         return stream_exists
 
-    async def stream(self, subscriber_name) -> str:
-        if subscriber_name not in self._subscribers:
-            return ""
-        return self._subscribers[subscriber_name].stream
-
-    def get_stream(self, subscriber_name) -> str:
-        if subscriber_name not in self._subscribers:
-            return ""
-        return self._subscribers[subscriber_name].stream
+    # async def stream(self, subscriber_name) -> str:
+    #     if subscriber_name not in self._subscribers:
+    #         return ""
+    #     return self._subscribers[subscriber_name].stream
+    #
+    # def get_stream(self, subscriber_name) -> str:
+    #     if subscriber_name not in self._subscribers:
+    #         return ""
+    #     return self._subscribers[subscriber_name].stream
 
     async def reconnect_stream(self, stream: str, offset: Optional[int] = None) -> None:
         logging.debug("reconnect_stream")
@@ -534,8 +535,8 @@ class Consumer:
         await self._close_locator_connection()
         if server_command_version.max_version < 2:
             filter_not_supported = (
-                "Filtering is not supported by the broker "
-                + "(requires RabbitMQ 3.13+ and stream_filtering feature flag activated)"
+                    "Filtering is not supported by the broker "
+                    + "(requires RabbitMQ 3.13+ and stream_filtering feature flag activated)"
             )
             raise ValueError(filter_not_supported)
 

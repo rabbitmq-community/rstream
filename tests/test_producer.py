@@ -532,7 +532,7 @@ async def test_producer_connection_broke(stream: str, consumer: Consumer) -> Non
 
 
 async def test_super_stream_producer_connection_broke(super_stream: str, consumer: Consumer) -> None:
-    producer_broke: Producer
+    # producer_broke: Producer
 
     super_stream_producer_broke = SuperStreamProducer(
         "localhost",
