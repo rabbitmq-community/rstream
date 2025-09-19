@@ -13,7 +13,8 @@ CHUNK_SIZE = 256
 CONNECT_TIMEOUT = 3
 
 
-class ConnectionClosed(Exception): ...
+class ConnectionClosed(Exception):
+    ...
 
 
 class Connection:
