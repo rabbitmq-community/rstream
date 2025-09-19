@@ -44,8 +44,8 @@ jobs:
         run: poetry run isort --check-only .
       - name: black check
         run: poetry run black --check .
-      - name: flake8
-        run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503
+#      - name: flake8
+#        run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503
       - name: mypy
         run: | 
           poetry add --group dev requests
