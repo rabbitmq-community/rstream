@@ -4,8 +4,10 @@ import signal
 from rstream import (
     AMQPMessage,
     Consumer,
+    ConsumerOffsetSpecification,
     MessageContext,
-    amqp_decoder, ConsumerOffsetSpecification, OffsetType
+    OffsetType,
+    amqp_decoder,
 )
 
 STREAM = "my-test-stream"

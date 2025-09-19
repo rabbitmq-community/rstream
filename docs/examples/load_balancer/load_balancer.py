@@ -1,11 +1,18 @@
 import asyncio
 import signal
 
-from rstream import Consumer, AMQPMessage, MessageContext, amqp_decoder, SuperStreamConsumer
+from rstream import (
+    AMQPMessage,
+    Consumer,
+    MessageContext,
+    SuperStreamConsumer,
+    amqp_decoder,
+)
 
 STREAM = "my-test-load-balancer-stream"
 
 import logging
+
 logging.getLogger("rstream").setLevel(logging.DEBUG)
 
 async def consume():

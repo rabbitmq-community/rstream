@@ -1,23 +1,22 @@
-import os
+import asyncio
 import json
 import logging
-import asyncio
+import os
 import time
-
 from collections import defaultdict
 
 from rstream import (
     AMQPMessage,
-    OffsetSpecification,
+    EventContext,
     MessageContext,
+    OffsetNotFound,
+    OffsetSpecification,
     OffsetType,
+    ServerError,
+    StreamDoesNotExist,
     SuperStreamConsumer,
     SuperStreamCreationOption,
     amqp_decoder,
-    EventContext,
-    OffsetNotFound,
-    StreamDoesNotExist,
-    ServerError,
 )
 
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()])
