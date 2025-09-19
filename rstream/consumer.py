@@ -257,9 +257,7 @@ class Consumer:
         )
 
         subscriber.client.add_handler(
-            schema.MetadataUpdate,
-            partial(self._on_metadata_update),
-            name=str(subscriber.subscription_id)
+            schema.MetadataUpdate, partial(self._on_metadata_update), name=str(subscriber.subscription_id)
         )
 
         # to handle single-active-consumer

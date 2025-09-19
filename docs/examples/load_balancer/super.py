@@ -36,9 +36,9 @@ stats = {}
 
 
 async def update_stats(
-        consumer: str,
-        stream: str,
-        offset: int,
+    consumer: str,
+    stream: str,
+    offset: int,
 ) -> None:
     global stats
 
@@ -71,11 +71,10 @@ async def on_message(message: AMQPMessage, context: MessageContext) -> None:
 
     await update_stats(consumer=context.consumer._connection_name, stream=stream, offset=offset)
     logger.info(
-        f"{context.consumer._connection_name}: Received {message} from {stream} at {offset}-- storing stream: {stream}, offset: {offset}, subscriber_name: {context.subscriber_name}")
-
-    await context.consumer.store_offset(
-        stream=stream, offset=offset, subscriber_name=context.subscriber_name
+        f"{context.consumer._connection_name}: Received {message} from {stream} at {offset}-- storing stream: {stream}, offset: {offset}, subscriber_name: {context.subscriber_name}"
     )
+
+    await context.consumer.store_offset(stream=stream, offset=offset, subscriber_name=context.subscriber_name)
 
 
 async def get_stored_offset(context: EventContext) -> int:
@@ -83,9 +82,7 @@ async def get_stored_offset(context: EventContext) -> int:
     stream_name = context.consumer._subscribers.get(subscriber_name).stream
 
     try:
-        offset = await context.consumer.query_offset(
-            stream=stream_name, subscriber_name=subscriber_name
-        )
+        offset = await context.consumer.query_offset(stream=stream_name, subscriber_name=subscriber_name)
         logger.info(f"Stored Offset Found {offset} stream: {stream_name}, subscriber_name: {subscriber_name}")
         return offset
     except OffsetNotFound:
@@ -100,7 +97,8 @@ async def get_stored_offset(context: EventContext) -> int:
         logger.error(f"Unknown exception: {str(e)}")
 
     logger.info(
-        f"NO Stored Offset Found stream: {stream_name}, subscriber_name: {subscriber_name} . Starting from beginning...")
+        f"NO Stored Offset Found stream: {stream_name}, subscriber_name: {subscriber_name} . Starting from beginning..."
+    )
     return -1
 
 
