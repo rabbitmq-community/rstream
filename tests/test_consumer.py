@@ -941,7 +941,6 @@ async def test_consume_filtering(stream: str, consumer: Consumer, producer_with_
         await producer_with_filtering.send_batch(stream=stream, batch=messages)  # type: ignore
 
     # Consumed just the filetered items
-    await asyncio.sleep(5)
     await wait_for(lambda: len(captured) == 10)
 
 
