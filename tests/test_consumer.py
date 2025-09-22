@@ -267,7 +267,6 @@ async def test_offset_type_timestamp(stream: str, consumer: Consumer, producer: 
         callback=lambda message, message_context: captured.append(bytes(message)),
         offset_specification=ConsumerOffsetSpecification(offset_type=OffsetType.TIMESTAMP, offset=now),
     )
-    # await asyncio.sleep(5)
     await wait_for(lambda: len(captured) > 0 and captured[0] >= b"5000", 2)
 
 
