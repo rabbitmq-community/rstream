@@ -866,7 +866,7 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
     i = 0
     for i in range(0, 10000):
         amqp_message = AMQPMessage(
-            body=bytes("hello: {}".format(i),"utf-8"),
+            body=bytes("hello: {}".format(i), "utf-8"),
             application_properties={"id": "{}".format(i)},
         )
         await super_stream_producer_broke.send(message=amqp_message)
@@ -993,7 +993,7 @@ async def test_consume_filtering_with_reconnect(stream, producer_with_filtering:
                     "id": id,
                 }
                 amqp_message = AMQPMessage(
-                    body=bytes("hello: {}".format(id),"utf-8"),
+                    body=bytes("hello: {}".format(id), "utf-8"),
                     application_properties=application_properties,
                 )
                 messages.append(amqp_message)
