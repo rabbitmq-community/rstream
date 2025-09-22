@@ -2,6 +2,7 @@ import logging
 import ssl
 
 import pytest
+import pytest_asyncio
 
 import rstream.client
 from rstream import (
@@ -27,7 +28,7 @@ logging.basicConfig(
 )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(scope="session", autouse=True)
 def configure():
     rstream.client.DEFAULT_REQUEST_TIMEOUT = 1
 
@@ -41,7 +42,7 @@ def pytest_addoption(parser):
     parser.addoption("--rmq-password", action="store", default="guest")
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 def ssl_context(pytestconfig):
     if pytestconfig.getoption("rmq_ssl"):
         return ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -49,7 +50,7 @@ def ssl_context(pytestconfig):
         return None
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def no_auth_client(pytestconfig, ssl_context):
     rstream.client.DEFAULT_REQUEST_TIMEOUT = 1
     client = Client(
@@ -66,7 +67,7 @@ async def no_auth_client(pytestconfig, ssl_context):
         await client.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def client(no_auth_client: Client, pytestconfig):
     await no_auth_client.authenticate(
         vhost=pytestconfig.getoption("rmq_vhost"),
@@ -76,8 +77,15 @@ async def client(no_auth_client: Client, pytestconfig):
     return no_auth_client
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def stream(client: Client):
+    try:
+        await client.delete_stream("test-stream")
+    except Exception:
+        # it doesn't matter if it fails
+        pass
+
+
     await client.create_stream("test-stream")
     try:
         yield "test-stream"
@@ -85,7 +93,7 @@ async def stream(client: Client):
         await client.delete_stream("test-stream")
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def stream2(client: Client):
     await client.create_stream("test-stream-2")
     try:
@@ -94,7 +102,7 @@ async def stream2(client: Client):
         await client.delete_stream("test-stream-2")
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def consumer(pytestconfig, ssl_context):
     consumer = Consumer(
         host=pytestconfig.getoption("rmq_host"),
@@ -112,7 +120,7 @@ async def consumer(pytestconfig, ssl_context):
         await consumer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def producer(pytestconfig, ssl_context):
     producer = Producer(
         host=pytestconfig.getoption("rmq_host"),
@@ -130,7 +138,7 @@ async def producer(pytestconfig, ssl_context):
         await producer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def producer_with_filtering(pytestconfig, ssl_context):
     producer = Producer(
         host=pytestconfig.getoption("rmq_host"),
@@ -149,7 +157,7 @@ async def producer_with_filtering(pytestconfig, ssl_context):
         await producer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream(client: Client):
     await client.create_super_stream(
         "test-super-stream",
@@ -162,7 +170,7 @@ async def super_stream(client: Client):
         await client.delete_super_stream("test-super-stream")
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream_producer(pytestconfig, ssl_context):
     producer = SuperStreamProducer(
         host=pytestconfig.getoption("rmq_host"),
@@ -183,7 +191,7 @@ async def super_stream_producer(pytestconfig, ssl_context):
         await producer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream_key_routing_producer(pytestconfig, ssl_context):
     producer = SuperStreamProducer(
         host=pytestconfig.getoption("rmq_host"),
@@ -204,7 +212,7 @@ async def super_stream_key_routing_producer(pytestconfig, ssl_context):
         await producer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream_producer_for_sac(pytestconfig, ssl_context):
     producer = SuperStreamProducer(
         host=pytestconfig.getoption("rmq_host"),
@@ -225,7 +233,7 @@ async def super_stream_producer_for_sac(pytestconfig, ssl_context):
         await producer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream_consumer(pytestconfig, ssl_context):
     consumer = SuperStreamConsumer(
         host=pytestconfig.getoption("rmq_host"),
@@ -244,7 +252,7 @@ async def super_stream_consumer(pytestconfig, ssl_context):
         await consumer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream_consumer_for_sac1(pytestconfig, ssl_context):
     consumer = SuperStreamConsumer(
         host=pytestconfig.getoption("rmq_host"),
@@ -263,7 +271,7 @@ async def super_stream_consumer_for_sac1(pytestconfig, ssl_context):
         await consumer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream_consumer_for_sac2(pytestconfig, ssl_context):
     consumer = SuperStreamConsumer(
         host=pytestconfig.getoption("rmq_host"),
@@ -282,7 +290,7 @@ async def super_stream_consumer_for_sac2(pytestconfig, ssl_context):
         await consumer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream_consumer_for_sac3(pytestconfig, ssl_context):
     consumer = SuperStreamConsumer(
         host=pytestconfig.getoption("rmq_host"),
@@ -301,7 +309,7 @@ async def super_stream_consumer_for_sac3(pytestconfig, ssl_context):
         await consumer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def super_stream_consumer_for_sac4(pytestconfig, ssl_context):
     consumer = SuperStreamConsumer(
         host=pytestconfig.getoption("rmq_host"),
