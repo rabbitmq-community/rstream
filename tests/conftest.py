@@ -1,7 +1,6 @@
 import logging
 import ssl
 
-import pytest
 import pytest_asyncio
 
 import rstream.client
