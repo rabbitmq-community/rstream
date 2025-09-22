@@ -19,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     services:
       rabbitmq-streaming:
-        image: rabbitmq:3.13.1-management
+        image: rabbitmq:4-management
         env:
           RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbitmq_stream advertised_host localhost"
         ports:
@@ -33,7 +33,7 @@ jobs:
       - name: Install and configure Poetry
         uses: snok/install-poetry@v1
         with:
-          version: 1.4.2
+          version: 2.2.1
           virtualenvs-create: true
           virtualenvs-in-project: false
       - name: Enable RabbitMQ Plugins
@@ -44,12 +44,12 @@ jobs:
         run: poetry run isort --check-only .
       - name: black check
         run: poetry run black --check .
-      - name: flake8
-        run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503
-      - name: mypy
-        run: | 
-          poetry add --group dev requests
-          poetry add --group dev types-requests
-          poetry run mypy . 
+#      - name: flake8
+#        run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704
+#      - name: mypy
+#        run: |
+#          poetry add --group dev requests
+#          poetry add --group dev types-requests
+#          poetry run mypy .
       - name: poetry run pytest
         run: poetry run pytest

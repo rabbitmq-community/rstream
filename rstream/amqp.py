@@ -12,8 +12,7 @@ from ._pyamqp.message import Message
 class _MessageProtocol(Protocol):
     publishing_id: Optional[int] = None
 
-    def __bytes__(self) -> bytes:
-        ...
+    def __bytes__(self) -> bytes: ...
 
 
 class AMQPMessage(Message, _MessageProtocol):

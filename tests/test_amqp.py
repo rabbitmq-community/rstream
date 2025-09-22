@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
+import pytest_asyncio
 
 from rstream import (
     AMQPMessage,
@@ -15,7 +16,7 @@ from rstream import (
 pytestmark = pytest.mark.asyncio
 
 
-async def test_amqp_message(stream: str, consumer: Consumer, producer: Producer) -> None:
+async def test_amqp_message(producer: Producer, consumer: Consumer, stream: str) -> None:
     amqp_message = AMQPMessage(
         properties=Properties(subject=b"test-subject"),
         message_annotations={b"test": 42},
