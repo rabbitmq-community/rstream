@@ -85,7 +85,6 @@ async def stream(client: Client):
         # it doesn't matter if it fails
         pass
 
-
     await client.create_stream("test-stream")
     try:
         yield "test-stream"
