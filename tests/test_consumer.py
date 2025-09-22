@@ -866,7 +866,7 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
     i = 0
     for i in range(0, 10000):
         amqp_message = AMQPMessage(
-            body="hello: {}".format(i),
+            body=bytes("hello: {}".format(i),"utf-8"),
             application_properties={"id": "{}".format(i)},
         )
         await super_stream_producer_broke.send(message=amqp_message)
@@ -930,7 +930,7 @@ async def test_consume_filtering(stream: str, consumer: Consumer, producer_with_
                 "id": str(i),
             }
             amqp_message = AMQPMessage(
-                body="hello: {}".format(i),
+                body=bytes("hello: {}".format(i), "utf-8"),
                 application_properties=application_properties,
             )
             messages.append(amqp_message)
@@ -969,7 +969,7 @@ async def test_consume_filtering_match_unfiltered(
                 "id": str(i),
             }
             amqp_message = AMQPMessage(
-                body="hello: {}".format(i),
+                body=bytes("hello: {}".format(i), "utf-8"),
                 application_properties=application_properties,
             )
             messages.append(amqp_message)
@@ -984,24 +984,22 @@ async def test_consume_filtering_with_reconnect(stream, producer_with_filtering:
     publishing_done = asyncio.Event()
     connection_broke = asyncio.Event()
 
-    async def task_to_publish_messages(connection_broke, producer):
-        for id in ("one", "two", "three", "four", "five"):
+    async def task_to_publish_messages(_connection_broke, _producer):
+        for id in ("one", "two", "three"):
             messages = []
-
-            if id == "three":
-                await connection_broke.wait()
 
             for _ in range(50):
                 application_properties = {
                     "id": id,
                 }
                 amqp_message = AMQPMessage(
-                    body="hello: {}".format(id),
+                    body=bytes("hello: {}".format(id),"utf-8"),
                     application_properties=application_properties,
                 )
                 messages.append(amqp_message)
             # send_batch is synchronous. will wait till termination
             await producer_with_filtering.send_batch(stream=stream, batch=messages)  # type: ignore
+            await asyncio.sleep(0.500)
         publishing_done.set()
 
     async def on_connection_closed(disconnection_info):

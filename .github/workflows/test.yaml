@@ -19,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     services:
       rabbitmq-streaming:
-        image: rabbitmq:4-management
+        image: rabbitmq:4.1-management
         env:
           RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbitmq_stream advertised_host localhost"
         ports:
