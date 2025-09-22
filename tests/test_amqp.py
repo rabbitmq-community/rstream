@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: MIT
 
 import pytest
-import pytest_asyncio
 
 from rstream import (
     AMQPMessage,

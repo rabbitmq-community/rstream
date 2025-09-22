@@ -19,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     services:
       rabbitmq-streaming:
-        image: rabbitmq:4-management
+        image: rabbitmq:4.1-management
         env:
           RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbitmq_stream advertised_host localhost"
         ports:
@@ -44,8 +44,8 @@ jobs:
         run: poetry run isort --check-only .
       - name: black check
         run: poetry run black --check .
-#      - name: flake8
-#        run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704
+      - name: flake8
+        run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704
 #      - name: mypy
 #        run: |
 #          poetry add --group dev requests

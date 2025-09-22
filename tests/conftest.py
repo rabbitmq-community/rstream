@@ -1,7 +1,6 @@
 import logging
 import ssl
 
-import pytest
 import pytest_asyncio
 
 import rstream.client
@@ -158,6 +157,12 @@ async def producer_with_filtering(pytestconfig, ssl_context):
 
 @pytest_asyncio.fixture()
 async def super_stream(client: Client):
+    try:
+        await client.delete_super_stream("test-super-stream")
+    except Exception:
+        # it doesn't matter if it fails
+        pass
+
     await client.create_super_stream(
         "test-super-stream",
         ["test-super-stream-0", "test-super-stream-1", "test-super-stream-2"],

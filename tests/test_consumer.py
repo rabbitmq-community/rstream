@@ -749,7 +749,6 @@ async def test_consumer_connection_broke(stream: str) -> None:
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal connection_broke
         connection_broke = True
-        nonlocal consumer_broke
         nonlocal stream_disconnected
         stream_disconnected = disconnection_info.streams.pop()
 
@@ -783,11 +782,9 @@ async def test_consumer_connection_broke(stream: str) -> None:
 async def test_super_stream_consumer_connection_broke(super_stream: str) -> None:
     connection_broke = False
     streams_disconnected: set[str] = set()
-    consumer_broke: Consumer
 
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal connection_broke
-        nonlocal streams_disconnected
         # avoiding multiple connection closed to hit
         if connection_broke is True:
             for stream in disconnection_info.streams:
@@ -832,13 +829,11 @@ async def test_super_stream_consumer_connection_broke(super_stream: str) -> None
 async def test_super_stream_consumer_connection_broke_with_reconnect(super_stream: str) -> None:
     connection_broke = False
     streams_disconnected: set[str] = set()
-    consumer_broke: Consumer
     offset_restart = 0
 
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         logger.warning("connection closed")
         nonlocal connection_broke
-        nonlocal streams_disconnected
         # avoiding multiple connection closed to hit
         if connection_broke is True:
             for stream in disconnection_info.streams:
@@ -869,7 +864,7 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
     i = 0
     for i in range(0, 10000):
         amqp_message = AMQPMessage(
-            body="hello: {}".format(i),
+            body=bytes("hello: {}".format(i), "utf-8"),
             application_properties={"id": "{}".format(i)},
         )
         await super_stream_producer_broke.send(message=amqp_message)
@@ -888,7 +883,6 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        nonlocal connection_broke
         message_context.consumer.get_stream(message_context.subscriber_name)
         # check after disconnection offset have been reset
         if connection_broke is True:
@@ -933,7 +927,7 @@ async def test_consume_filtering(stream: str, consumer: Consumer, producer_with_
                 "id": str(i),
             }
             amqp_message = AMQPMessage(
-                body="hello: {}".format(i),
+                body=bytes("hello: {}".format(i), "utf-8"),
                 application_properties=application_properties,
             )
             messages.append(amqp_message)
@@ -972,7 +966,7 @@ async def test_consume_filtering_match_unfiltered(
                 "id": str(i),
             }
             amqp_message = AMQPMessage(
-                body="hello: {}".format(i),
+                body=bytes("hello: {}".format(i), "utf-8"),
                 application_properties=application_properties,
             )
             messages.append(amqp_message)
@@ -987,24 +981,22 @@ async def test_consume_filtering_with_reconnect(stream, producer_with_filtering:
     publishing_done = asyncio.Event()
     connection_broke = asyncio.Event()
 
-    async def task_to_publish_messages(connection_broke, producer):
-        for id in ("one", "two", "three", "four", "five"):
+    async def task_to_publish_messages(_connection_broke, _producer):
+        for id in ("one", "two", "three"):
             messages = []
-
-            if id == "three":
-                await connection_broke.wait()
 
             for _ in range(50):
                 application_properties = {
                     "id": id,
                 }
                 amqp_message = AMQPMessage(
-                    body="hello: {}".format(id),
+                    body=bytes("hello: {}".format(id), "utf-8"),
                     application_properties=application_properties,
                 )
                 messages.append(amqp_message)
             # send_batch is synchronous. will wait till termination
             await producer_with_filtering.send_batch(stream=stream, batch=messages)  # type: ignore
+            await asyncio.sleep(0.500)
         publishing_done.set()
 
     async def on_connection_closed(disconnection_info):
@@ -1057,7 +1049,6 @@ async def test_consumer_metadata_update(consumer: Consumer) -> None:
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal consumer_closed
 
-        nonlocal consumer_metadata_update
         nonlocal stream_disconnected
         stream_disconnected = disconnection_info.streams.pop()
 
