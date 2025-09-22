@@ -749,7 +749,6 @@ async def test_consumer_connection_broke(stream: str) -> None:
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal connection_broke
         connection_broke = True
-        nonlocal consumer_broke
         nonlocal stream_disconnected
         stream_disconnected = disconnection_info.streams.pop()
 
@@ -783,11 +782,9 @@ async def test_consumer_connection_broke(stream: str) -> None:
 async def test_super_stream_consumer_connection_broke(super_stream: str) -> None:
     connection_broke = False
     streams_disconnected: set[str] = set()
-    consumer_broke: Consumer
 
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal connection_broke
-        nonlocal streams_disconnected
         # avoiding multiple connection closed to hit
         if connection_broke is True:
             for stream in disconnection_info.streams:
