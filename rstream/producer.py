@@ -87,7 +87,7 @@ class Producer:
         max_publishers_by_connection=256,
         default_batch_publishing_delay: float = 3,
         default_context_switch_value: int = 1000,
-        connection_name: str = None,
+        connection_name: str = "",
         sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
         filter_value_extractor: Optional[CB_F[Any]] = None,
     ):
@@ -127,7 +127,7 @@ class Producer:
         self.publisher_id = 0
         self._max_publishers_by_connection = max_publishers_by_connection
 
-        if self._connection_name is None:
+        if self._connection_name is None or self._connection_name == "":
             self._connection_name = "rstream-producer"
 
     @property
@@ -466,7 +466,7 @@ class Producer:
                         value_filter = await self._filter_value_extractor(msg)
                         messages.append(
                             schema.Message(
-                                publishing_id=msg.publishing_id,
+                                publishing_id=msg.publishing_id,  # type: ignore[arg-type]
                                 filter_value=value_filter,
                                 data=bytes(msg),
                             )

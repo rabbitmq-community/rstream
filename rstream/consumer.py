@@ -83,7 +83,7 @@ class Consumer:
         max_retries: int = 20,
         max_subscribers_by_connection: int = 256,
         on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
-        connection_name: str = None,
+        connection_name: str = "",
         sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
     ):
         self._pool = ClientPool(
@@ -108,7 +108,7 @@ class Consumer:
         self._on_close_handler = on_close_handler
         self._connection_name = connection_name
         self._sasl_configuration_mechanism = sasl_configuration_mechanism
-        if self._connection_name is None:
+        if self._connection_name is None or self._connection_name == "":
             self._connection_name = "rstream-consumer"
         self._max_subscribers_by_connection = max_subscribers_by_connection
 

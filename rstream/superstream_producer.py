@@ -59,7 +59,7 @@ class SuperStreamProducer:
         max_retries: int = 20,
         max_publishers_by_connection=256,
         default_batch_publishing_delay: float = 0.2,
-        connection_name: str = None,
+        connection_name: str = "",
         filter_value_extractor: Optional[CB_F[Any]] = None,
     ):
         self._pool = ClientPool(
@@ -89,10 +89,10 @@ class SuperStreamProducer:
         self.max_retries = max_retries
         self.default_batch_publishing_delay = default_batch_publishing_delay
         self._default_client: Optional[Client] = None
-        self._producer: Producer | None = None
+        self._producer: Optional[Producer] = None
         self._routing_strategy: RoutingStrategy
         self._connection_name = connection_name
-        if self._connection_name is None:
+        if self._connection_name is None or self._connection_name == "":
             self._connection_name = "rstream-producer"
         self._filter_value_extractor: Optional[CB_F[Any]] = filter_value_extractor
         self.super_stream_creation_option = super_stream_creation_option

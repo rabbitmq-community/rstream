@@ -52,7 +52,7 @@ async def routing_extractor(message: AMQPMessage) -> str:
 
 
 # Make producers (producer or superstream producer)
-async def make_producer(rabbitmq_data: dict) -> Producer | SuperStreamProducer:
+async def make_producer(rabbitmq_data: dict) -> Producer | SuperStreamProducer:  # type: ignore
     host = rabbitmq_data["Host"]
     username = rabbitmq_data["Username"]
     password = rabbitmq_data["Password"]
@@ -124,7 +124,7 @@ async def on_close_connection(on_closed_info: OnClosedErrorInfo) -> None:
 
 
 # Make consumers
-async def make_consumer(rabbitmq_data: dict) -> Consumer | SuperStreamConsumer:
+async def make_consumer(rabbitmq_data: dict) -> Consumer | SuperStreamConsumer:  # type: ignore
     host = rabbitmq_data["Host"]
     username = rabbitmq_data["Username"]
     password = rabbitmq_data["Password"]
