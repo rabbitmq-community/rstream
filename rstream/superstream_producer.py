@@ -89,7 +89,7 @@ class SuperStreamProducer:
         self.max_retries = max_retries
         self.default_batch_publishing_delay = default_batch_publishing_delay
         self._default_client: Optional[Client] = None
-        self._producer: Producer | None = None
+        self._producer: Optional[Producer]  = None
         self._routing_strategy: RoutingStrategy
         self._connection_name = connection_name
         if self._connection_name is None or self._connection_name == "":
