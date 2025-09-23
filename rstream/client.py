@@ -113,11 +113,11 @@ class BaseClient:
 
     def start_task(self, name: str, coro: Awaitable[None]) -> None:
         assert name not in self._tasks
-        task = self._tasks[name] = asyncio.create_task(coro)
+        task = self._tasks[name] = asyncio.create_task(coro)  # type: ignore
 
-        def on_task_done(task: asyncio.Task[Any]) -> None:
-            if not task.cancelled():
-                task.result()
+        def on_task_done(task_done: asyncio.Task[Any]) -> None:
+            if not task_done.cancelled():
+                task_done.result()
 
         task.add_done_callback(on_task_done)
         logger.debug("Started task %s", name)

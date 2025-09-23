@@ -24,8 +24,8 @@ async def routing_extractor(message: AMQPMessage) -> str:
 
 async def publish():
     global counter
-    counter = 0
-    sent = 0
+    # counter = 0
+    # sent = 0
     async with SuperStreamProducer(
         "localhost",
         username="guest",

@@ -9,23 +9,25 @@ from importlib import metadata  # noqa: E402
 
 from .utils import FilterConfiguration, OnClosedErrorInfo  # noqa: E402
 
+from .amqp import AMQPMessage, amqp_decoder  # noqa: E402
+from ._pyamqp.message import Properties  # type: ignore
+from ._pyamqp.message import Header  # type: ignore
+from .compression import CompressionType  # type: ignore
+from .constants import (  # noqa: E402
+    ConsumerOffsetSpecification,
+    SlasMechanism,
+)
+
 try:
     __version__ = metadata.version(__package__)
     __license__ = metadata.metadata(__package__)["license"]
 except metadata.PackageNotFoundError:
     __version__ = "dev"
-    __license__ = None
+    __license__ = "MIT"
 
 del metadata
 
-from .amqp import AMQPMessage, amqp_decoder  # noqa: E402
-from ._pyamqp.message import Properties  # noqa: E402
-from ._pyamqp.message import Header  # noqa: E402
-from .compression import CompressionType  # noqa: E402
-from .constants import (  # noqa: E402
-    ConsumerOffsetSpecification,
-    SlasMechanism,
-)
+
 from .consumer import (  # noqa: E402
     Consumer,
     EventContext,

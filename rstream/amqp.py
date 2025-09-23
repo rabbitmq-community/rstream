@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Optional, Protocol
 
-from ._pyamqp._decode import decode_payload
-from ._pyamqp._encode import encode_payload
-from ._pyamqp.message import Message
+from ._pyamqp._decode import decode_payload  # type: ignore
+from ._pyamqp._encode import encode_payload  # type: ignore
+from ._pyamqp.message import Message  # type: ignore
 
 # import uamqp
 

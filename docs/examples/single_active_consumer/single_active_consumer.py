@@ -4,6 +4,7 @@ from collections import defaultdict
 
 from rstream import (
     AMQPMessage,
+    ConsumerOffsetSpecification,
     EventContext,
     MessageContext,
     OffsetSpecification,
@@ -62,16 +63,14 @@ async def consume():
         await consumer.start()
 
         # properties of the consumer (enabling single active mode)
-        properties: dict[str, str] = defaultdict(str)
+        properties: dict[str, str] = defaultdict(str)  # type: ignore
         properties["single-active-consumer"] = "true"
         properties["name"] = "consumer-group-1"
         properties["super-stream"] = "invoices"
 
-        offset_specification = OffsetSpecification(OffsetType.FIRST, None)
-
         await consumer.subscribe(
             callback=on_message,
-            offset_specification=offset_specification,
+            offset_specification=ConsumerOffsetSpecification(offset_type=OffsetType.FIRST),
             decoder=amqp_decoder,
             properties=properties,
             consumer_update_listener=consumer_update_handler_offset,

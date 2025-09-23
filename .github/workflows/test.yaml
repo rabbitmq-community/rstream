@@ -46,10 +46,10 @@ jobs:
         run: poetry run black --check .
       - name: flake8
         run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704
-#      - name: mypy
-#        run: |
-#          poetry add --group dev requests
-#          poetry add --group dev types-requests
-#          poetry run mypy .
+      - name: mypy
+        run: |
+          poetry add --group dev requests
+          poetry add --group dev types-requests
+          poetry run mypy .
       - name: poetry run pytest
         run: poetry run pytest

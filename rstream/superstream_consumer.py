@@ -55,7 +55,7 @@ class SuperStreamConsumer:
         max_subscribers_by_connection: int = 256,
         super_stream: str,
         super_stream_creation_option: Optional[SuperStreamCreationOption] = None,
-        connection_name: str = None,
+        connection_name: str = "",
         on_close_handler: Optional[CB[OnClosedErrorInfo]] = None,
     ):
         self._pool = ClientPool(
@@ -89,7 +89,7 @@ class SuperStreamConsumer:
         self._subscribers: dict[str, str] = defaultdict(str)
         self._on_close_handler = on_close_handler
         self._connection_name = connection_name
-        if self._connection_name is None:
+        if self._connection_name is None or self._connection_name == "":
             self._connection_name = "rstream-consumer"
 
         self.super_stream_creation_option = super_stream_creation_option

@@ -27,9 +27,11 @@ CB = Annotated[Callable[[MT], Awaitable[Any]], "Message callback type"]
 
 
 class Metadata(abc.ABC):
+    @abc.abstractmethod
     async def partitions(self) -> list[str]:
         pass
 
+    @abc.abstractmethod
     async def routes(self, routing_key: str) -> list[str]:
         pass
 
@@ -61,13 +63,14 @@ class DefaultSuperstreamMetadata(Metadata):
 
 
 class RoutingStrategy(abc.ABC):
+    @abc.abstractmethod
     async def route(self, message: MessageT, metadata: Metadata) -> list[str]:
         pass
 
 
 class RoutingKeyRoutingStrategy(RoutingStrategy):
-    def __init__(self, routingKeyExtractor: CB[Any]):
-        self.routingKeyExtractor: CB[Any] = routingKeyExtractor
+    def __init__(self, routing_key_extractor: CB[Any]):
+        self.routingKeyExtractor: CB[Any] = routing_key_extractor
 
     async def route(self, message: MessageT, metadata: Metadata) -> list[str]:
         key = await self.routingKeyExtractor(message)
@@ -75,8 +78,8 @@ class RoutingKeyRoutingStrategy(RoutingStrategy):
 
 
 class HashRoutingMurmurStrategy(RoutingStrategy):
-    def __init__(self, routingKeyExtractor: CB[Any]):
-        self.routingKeyExtractor: CB[Any] = routingKeyExtractor
+    def __init__(self, routing_key_extractor: CB[Any]):
+        self.routingKeyExtractor: CB[Any] = routing_key_extractor
 
     async def route(self, message: MessageT, metadata: Metadata) -> list[str]:
         logger.debug("route() Compute routing")

@@ -4,6 +4,7 @@ import time
 from rstream import (
     AMQPMessage,
     RouteType,
+    SuperStreamCreationOption,
     SuperStreamProducer,
 )
 
