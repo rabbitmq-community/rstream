@@ -102,7 +102,7 @@ class BaseClient:
         self._connection_closed_handler = connection_closed_handler
         self._sasl_configuration_mechanism = sasl_configuration_mechanism
 
-        self._frames: dict[str, asyncio.Queue] = defaultdict(asyncio.Queue)
+        self._frames: dict[int, asyncio.Queue] = defaultdict(asyncio.Queue)
         self._is_not_closed: bool = True
         self._max_clients_by_connections = max_clients_by_connections
 
@@ -239,22 +239,22 @@ class BaseClient:
         self.add_handler(schema.Heartbeat, self._on_heartbeat)
         self.add_handler(schema.Close, self._on_close)
 
-    async def run_queue_listener_task(self, subscriber_name: str, handler: HT[FT]) -> None:
-        task_name = f"run_delivery_handlers_{subscriber_name}"
+    async def run_queue_listener_task(self, subscriber_id: int, handler: HT[FT]) -> None:
+        task_name = f"run_delivery_handlers_{subscriber_id}"
         if task_name not in self._tasks:
             self.start_task(
                 task_name,
-                self._run_delivery_handlers(subscriber_name, handler),
+                self._run_delivery_handlers(subscriber_id, handler),
             )
 
-    async def stop_queue_listener_task(self, subscriber_name: str) -> None:
-        await self.stop_task(name=f"run_delivery_handlers_{subscriber_name}")
-        while not self._frames[subscriber_name].empty():
-            self._frames[subscriber_name].get_nowait()
+    async def stop_queue_listener_task(self, subscriber_id: int) -> None:
+        await self.stop_task(name=f"run_delivery_handlers_{subscriber_id}")
+        while not self._frames[subscriber_id].empty():
+            self._frames[subscriber_id].get_nowait()
 
-    async def _run_delivery_handlers(self, subscriber_name: str, handler: HT[FT]):
+    async def _run_delivery_handlers(self, subscriber_id: int, handler: HT[FT]):
         while self.is_connection_alive():
-            frame_entry = await self._frames[subscriber_name].get()
+            frame_entry = await self._frames[subscriber_id].get()
             try:
                 if self.is_connection_alive():
                     maybe_coro = handler(frame_entry)
@@ -286,10 +286,10 @@ class BaseClient:
                         fut.set_result(frame)
                     del self._waiters[_key]
 
-                for subscriber_name, handler in list(self._handlers.get(frame.__class__, {}).items()):
+                for subscriber_id, handler in list(self._handlers.get(frame.__class__, {}).items()):
                     try:
                         if frame.__class__ == schema.Deliver:
-                            await self._frames[subscriber_name].put(frame)
+                            await self._frames[int(subscriber_id)].put(frame)
                         else:
                             maybe_coro = handler(frame)
                             if maybe_coro is not None:
@@ -369,8 +369,8 @@ class BaseClient:
         await asyncio.sleep(0.2)
         await self.stop_task("listener")
 
-        for subscriber_name in self._frames:
-            await self.stop_queue_listener_task(subscriber_name=subscriber_name)
+        for subscriber_id in self._frames:
+            await self.stop_queue_listener_task(subscriber_id=subscriber_id)
 
         if self._conn is not None and connection_is_broken is False:
             await self._conn.close()

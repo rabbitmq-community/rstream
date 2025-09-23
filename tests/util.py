@@ -31,9 +31,11 @@ logger = logging.getLogger(__name__)
 
 
 async def wait_for(condition, timeout=1):
+    await asyncio.sleep(0.5)
+
     async def _wait():
         while not condition():
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
     await asyncio.wait_for(_wait(), timeout)
 
@@ -83,8 +85,7 @@ async def routing_extractor_key(message: AMQPMessage) -> str:
 async def on_message(
     msg: AMQPMessage, message_context: MessageContext, streams: list[str], offsets: list[int]
 ):
-    stream = message_context.consumer.get_stream(message_context.subscriber_name)
-    streams.append(stream)
+    streams.append(message_context.stream)
     offset = message_context.offset
     offsets.append(offset)
 
@@ -105,9 +106,7 @@ async def run_consumer(
     properties["super-stream"] = "test-super-stream"
 
     await super_stream_consumer.subscribe(
-        callback=lambda message, message_context: streams.append(
-            message_context.consumer.get_stream(message_context.subscriber_name)
-        ),
+        callback=lambda message, message_context: streams.append(message_context.stream),
         decoder=amqp_decoder,
         properties=properties,
         consumer_update_listener=consumer_update_listener,

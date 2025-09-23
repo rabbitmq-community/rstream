@@ -42,7 +42,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MessageContext:
     consumer: Consumer
-    subscriber_name: str
+    stream: str
+    subscriber_id: int
+    subscriber_name: Optional[str]
     offset: int
     timestamp: int
 
@@ -50,7 +52,8 @@ class MessageContext:
 @dataclass
 class EventContext:
     consumer: Consumer
-    subscriber_name: str
+    subscriber_id: int
+    subscriber_name: Optional[str]
     reference: str
 
 
@@ -58,7 +61,7 @@ class EventContext:
 class _Subscriber:
     stream: str
     subscription_id: int
-    reference: str
+    reference: Optional[str]
     client: Client
     callback: Callable[[AMQPMessage, MessageContext], Union[None, Awaitable[None]]]
     decoder: Callable[[bytes], Any]
@@ -102,7 +105,7 @@ class Consumer:
 
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}
-        self._subscribers: dict[str, _Subscriber] = {}
+        self._subscribers: dict[int, _Subscriber] = {}
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self._on_close_handler = on_close_handler
@@ -143,7 +146,7 @@ class Consumer:
         logger.debug("close(): Unsubscribe subscribers")
         for subscriber in list(self._subscribers.values()):
             if subscriber.client.is_connection_alive():
-                await self.unsubscribe(subscriber.reference)
+                await self.unsubscribe(subscriber.subscription_id)
 
         logger.debug("close(): Cleaning up structs")
         self._subscribers.clear()
@@ -197,14 +200,14 @@ class Consumer:
         # We can have multiple subscribers sharing same connection, so their ids must be distinct
         # subscription_id = len([s for s in self._subscribers.values() if s.client is client]) + 1
         subscription_id = await client.get_available_id()
-        reference = subscriber_name or f"{stream}_subscriber_{subscription_id}"
+        # reference = subscriber_name or f"{stream}_subscriber_{subscription_id}"
         decoder = decoder or (lambda x: x)
 
-        subscriber = self._subscribers[reference] = _Subscriber(
+        subscriber = self._subscribers[subscription_id] = _Subscriber(
             stream=stream,
             subscription_id=subscription_id,
             client=client,
-            reference=reference,
+            reference=subscriber_name,
             callback=callback,
             decoder=decoder,
             offset_type=offset_type,
@@ -227,7 +230,7 @@ class Consumer:
             Callable[[bool, EventContext], Awaitable[OffsetSpecification]]
         ] = None,
         filter_input: Optional[FilterConfiguration] = None,
-    ) -> str:
+    ) -> int:
         logger.debug("Consumer subscribe()")
         if offset_specification is None:
             offset_specification = ConsumerOffsetSpecification(OffsetType.FIRST, None)
@@ -245,7 +248,7 @@ class Consumer:
             )
 
             await subscriber.client.run_queue_listener_task(
-                subscriber_name=subscriber.reference,
+                subscriber_id=subscriber.subscription_id,
                 handler=partial(self._on_deliver, subscriber=subscriber, filter_value=filter_input),
             )
 
@@ -253,13 +256,13 @@ class Consumer:
         subscriber.client.add_handler(
             schema.Deliver,
             partial(self._on_deliver, subscriber=subscriber, filter_value=filter_input),
-            name=subscriber.reference,
+            name=str(subscriber.subscription_id),
         )
 
         subscriber.client.add_handler(
             schema.MetadataUpdate,
             partial(self._on_metadata_update),
-            name=subscriber.reference,
+            name=str(subscriber.subscription_id),
         )
 
         # to handle single-active-consumer
@@ -274,7 +277,7 @@ class Consumer:
                         reference=properties["name"],
                         consumer_update_listener=consumer_update_listener,
                     ),
-                    name=subscriber.reference,
+                    name=str(subscriber.subscription_id),
                 )
 
         if filter_input is not None:
@@ -305,13 +308,13 @@ class Consumer:
             properties=properties,
         )
 
-        return subscriber.reference
+        return subscriber.subscription_id
 
-    async def unsubscribe(self, subscriber_name: str) -> None:
+    async def unsubscribe(self, subscriber_id: int) -> None:
         logger.debug("unsubscribe(): UnSubscribing and removing handlers")
-        subscriber = self._subscribers[subscriber_name]
+        subscriber = self._subscribers[subscriber_id]
 
-        await subscriber.client.stop_queue_listener_task(subscriber_name=subscriber_name)
+        await subscriber.client.stop_queue_listener_task(subscriber_id=subscriber_id)
         subscriber.client.remove_handler(
             schema.Deliver,
             name=subscriber.reference,
@@ -333,7 +336,7 @@ class Consumer:
             await self._clients[stream].remove_stream(stream)
             await self._clients[stream].free_available_id(subscriber.subscription_id)
 
-        del self._subscribers[subscriber_name]
+        del self._subscribers[subscriber_id]
 
     async def query_offset(self, stream: str, subscriber_name: str) -> int:
         if subscriber_name == "":
@@ -391,7 +394,14 @@ class Consumer:
         await subscriber.client.credit(subscriber.subscription_id, 1)
 
         for offset, message in self._filter_messages(frame, subscriber, filter_value):
-            message_context = MessageContext(self, subscriber.reference, offset, frame.timestamp)
+            message_context = MessageContext(
+                self,
+                subscriber.stream,
+                subscriber.subscription_id,
+                subscriber.reference,
+                offset,
+                frame.timestamp,
+            )
 
             maybe_coro = subscriber.callback(subscriber.decoder(message), message_context)
             if maybe_coro is not None:
@@ -429,7 +439,7 @@ class Consumer:
 
         else:
             is_active = bool(frame.active)
-            event_context = EventContext(self, subscriber.reference, reference)
+            event_context = EventContext(self, subscriber.subscription_id, subscriber.reference, reference)
             offset_specification = await consumer_update_listener(is_active, event_context)
             subscriber.offset_type = OffsetType(offset_specification.offset_type)
             subscriber.offset = offset_specification.offset
@@ -454,7 +464,7 @@ class Consumer:
     async def clean_up_subscribers(self, stream: str):
         for subscriber in list(self._subscribers.values()):
             if subscriber.stream == stream:
-                del self._subscribers[subscriber.reference]
+                del self._subscribers[subscriber.subscription_id]
 
     async def delete_stream(self, stream: str, missing_ok: bool = False) -> None:
         await self.clean_up_subscribers(stream)

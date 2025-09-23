@@ -33,9 +33,10 @@ async def on_message(msg: AMQPMessage, message_context: MessageContext):
         cont = cont + 1
         # store the offset every 1000 messages received
         if cont % 1000 == 0:
-            await consumer.store_offset(
-                stream=stream, offset=offset, subscriber_name=message_context.subscriber_name
-            )
+            if message_context.subscriber_name is not None:
+                await consumer.store_offset(
+                    stream=stream, offset=offset, subscriber_name=message_context.subscriber_name
+                )
 
 
 async def consume():

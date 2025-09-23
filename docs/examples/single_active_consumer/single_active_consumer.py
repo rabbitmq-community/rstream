@@ -28,7 +28,10 @@ async def on_message(msg: AMQPMessage, message_context: MessageContext):
     # you should not store the offset every message received in production
     # it could be a performance issue
     # this is just an example
-    await consumer.store_offset(stream=stream, offset=offset, subscriber_name=message_context.subscriber_name)
+    if message_context.subscriber_name is not None:
+        await consumer.store_offset(
+            stream=stream, offset=offset, subscriber_name=message_context.subscriber_name
+        )
     print("Got message: {} from stream {} offset {}".format(msg, stream, offset))
 
 
@@ -36,8 +39,10 @@ async def on_message(msg: AMQPMessage, message_context: MessageContext):
 # By default if not present the always the strategy OffsetType.NEXT will be set.
 # This handle will be passed to subscribe.
 async def consumer_update_handler_offset(is_active: bool, event_context: EventContext) -> OffsetSpecification:
-    stream = str(event_context.consumer.get_stream(event_context.subscriber_name))
-    print("stream is: " + stream + " subscriber_name" + event_context.subscriber_name)
+    if event_context.subscriber_name is not None:
+        stream = str(event_context.consumer.get_stream(event_context.subscriber_name))
+        print("stream is: " + stream + " subscriber_name" + event_context.subscriber_name)
+
     if is_active:
         # Put the logic of your use case here
         return OffsetSpecification(OffsetType.OFFSET, 10)
