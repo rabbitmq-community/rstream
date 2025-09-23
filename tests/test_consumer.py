@@ -773,7 +773,7 @@ async def test_consumer_connection_broke(stream: str) -> None:
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
 
     asyncio.create_task(task_to_delete_connection("test-connection"))
 
@@ -818,7 +818,7 @@ async def test_super_stream_consumer_connection_broke(super_stream: str) -> None
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
 
     asyncio.create_task(task_to_delete_connection("test-connection"))
 
@@ -891,7 +891,7 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
         # check after disconnection offset have been reset
         if connection_broke is True:
             assert message_context.offset == offset_restart
@@ -1075,7 +1075,7 @@ async def test_consumer_metadata_update(consumer: Consumer) -> None:
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
 
     await consumer_metadata_update.start()
     await consumer_metadata_update.create_stream(stream)

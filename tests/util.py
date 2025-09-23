@@ -90,9 +90,8 @@ async def on_message(
     offsets.append(offset)
 
 
-async def on_message_sac(msg: AMQPMessage, message_context: MessageContext, streams: list[str]):
-    stream = message_context.consumer.get_stream(message_context.subscriber_name)
-    streams.append(stream)
+async def on_message_sac(_msg: AMQPMessage, message_context: MessageContext, streams: list[str]):
+    streams.append(message_context.stream)
 
 
 async def run_consumer(

@@ -22,17 +22,19 @@ async def on_message(msg: AMQPMessage, message_context: MessageContext):
     global lock
 
     consumer = message_context.consumer
-    stream = await message_context.consumer.stream(message_context.subscriber_name)
-    offset = message_context.offset
     # store the offset every message received
     # you should not store the offset every message received in production
     # it could be a performance issue
     # this is just an example
     if message_context.subscriber_name is not None:
         await consumer.store_offset(
-            stream=stream, offset=offset, subscriber_name=message_context.subscriber_name
+            stream=message_context.stream,
+            offset=message_context.offset,
+            subscriber_name=message_context.subscriber_name,
         )
-    print("Got message: {} from stream {} offset {}".format(msg, stream, offset))
+    print(
+        "Got message: {} from stream {} offset {}".format(msg, message_context.stream, message_context.offset)
+    )
 
 
 # We can decide a strategy to manage Offset specification in single active consumer based on is_active flag
@@ -40,8 +42,7 @@ async def on_message(msg: AMQPMessage, message_context: MessageContext):
 # This handle will be passed to subscribe.
 async def consumer_update_handler_offset(is_active: bool, event_context: EventContext) -> OffsetSpecification:
     if event_context.subscriber_name is not None:
-        stream = str(event_context.consumer.get_stream(event_context.subscriber_name))
-        print("stream is: " + stream + " subscriber_name" + event_context.subscriber_name)
+        print("stream is: " + event_context.stream + " subscriber_name" + event_context.subscriber_name)
 
     if is_active:
         # Put the logic of your use case here

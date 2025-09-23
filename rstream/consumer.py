@@ -52,6 +52,7 @@ class MessageContext:
 @dataclass
 class EventContext:
     consumer: Consumer
+    stream: str
     subscriber_id: int
     subscriber_name: Optional[str]
     reference: str
@@ -439,7 +440,9 @@ class Consumer:
 
         else:
             is_active = bool(frame.active)
-            event_context = EventContext(self, subscriber.subscription_id, subscriber.reference, reference)
+            event_context = EventContext(
+                self, subscriber.stream, subscriber.subscription_id, subscriber.reference, reference
+            )
             offset_specification = await consumer_update_listener(is_active, event_context)
             subscriber.offset_type = OffsetType(offset_specification.offset_type)
             subscriber.offset = offset_specification.offset
@@ -487,16 +490,6 @@ class Consumer:
             await self._close_locator_connection()
 
         return stream_exists
-
-    async def stream(self, subscriber_name) -> str:
-        if subscriber_name not in self._subscribers:
-            return ""
-        return self._subscribers[subscriber_name].stream
-
-    def get_stream(self, subscriber_name) -> str:
-        if subscriber_name not in self._subscribers:
-            return ""
-        return self._subscribers[subscriber_name].stream
 
     async def reconnect_stream(self, stream: str, offset: Optional[int] = None) -> None:
         logging.debug("reconnect_stream")
