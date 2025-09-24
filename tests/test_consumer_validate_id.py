@@ -13,8 +13,7 @@ from rstream import (
     SuperStreamProducer,
     amqp_decoder,
 )
-from rstream._pyamqp.message import \
-    Properties  # type: ignore[attr-defined]
+from rstream._pyamqp.message import Properties  # type: ignore
 from rstream.exceptions import (
     MaxConsumersPerConnectionReached,
 )
@@ -23,10 +22,26 @@ from tests.util import wait_for
 pytestmark = pytest.mark.asyncio
 
 
+async def test_validate_subscriber_limits():
+    try:
+        _ = Consumer(
+            host="dontcare", username="dontcare", password="dontcare", max_subscribers_by_connection=500
+        )
+        assert False
+    except ValueError:
+        assert True
+
+    try:
+        _ = Consumer(
+            host="dontcare", username="dontcare", password="dontcare", max_subscribers_by_connection=-1
+        )
+        assert False
+    except ValueError:
+        assert True
+
+
 # This test file is created to test this PR https://github.com/rabbitmq-community/rstream/pull/246
 # where the _subscribes changed from {reference, Subscriber} to {subscriber_id: Subscriber}
-
-
 # validate the consumer id.
 async def test_validate_subscriber_id_to_stream(stream: str, pytestconfig) -> None:
     consumer = Consumer(
@@ -127,7 +142,6 @@ async def test_routing_to_stream_(producer: Producer, pytestconfig) -> None:
 async def test_validate_subscriber_name_to_super_stream(
     super_stream: str, super_stream_producer: SuperStreamProducer, super_stream_consumer: SuperStreamConsumer
 ) -> None:
-
     async def sub(sub_name: Optional[str]):
         def process_data(message_context: MessageContext):
             assert message_context.subscriber_name == sub_name

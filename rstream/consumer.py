@@ -23,6 +23,7 @@ from . import exceptions, schema
 from .amqp import AMQPMessage
 from .client import Addr, Client, ClientPool
 from .constants import (
+    MAX_ITEM_ALLOWED,
     SUBSCRIPTION_PROPERTY_FILTER_PREFIX,
     SUBSCRIPTION_PROPERTY_MATCH_UNFILTERED,
     ConsumerOffsetSpecification,
@@ -85,7 +86,7 @@ class Consumer:
         heartbeat: int = 60,
         load_balancer_mode: bool = False,
         max_retries: int = 20,
-        max_subscribers_by_connection: int = 256,
+        max_subscribers_by_connection: int = MAX_ITEM_ALLOWED,
         on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
         connection_name: str = "",
         sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
@@ -103,6 +104,13 @@ class Consumer:
             max_retries=max_retries,
             sasl_configuration_mechanism=sasl_configuration_mechanism,
         )
+
+        # validate max_subscribers_by_connection
+        if max_subscribers_by_connection <= 0:
+            raise ValueError("max_subscribers_by_connection must be greater than 0")
+
+        if max_subscribers_by_connection > MAX_ITEM_ALLOWED:
+            raise ValueError(f"max_subscribers_by_connection must be less than {MAX_ITEM_ALLOWED}")
 
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}

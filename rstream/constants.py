@@ -71,3 +71,8 @@ class ConsumerOffsetSpecification:
 
 SUBSCRIPTION_PROPERTY_FILTER_PREFIX = "filter."
 SUBSCRIPTION_PROPERTY_MATCH_UNFILTERED = "match-unfiltered"
+
+# max consumers or producers allowed per connection
+# even the protocol supports 256 items, we limit it to 200
+# share to many consumers/producers can lead to performance issues
+MAX_ITEM_ALLOWED = 200
