@@ -23,7 +23,7 @@ from .amqp import AMQPMessage
 from .client import Addr, Client, ClientPool
 from .constants import (
     ConsumerOffsetSpecification,
-    OffsetType,
+    OffsetType, MAX_ITEM_ALLOWED,
 )
 from .consumer import Consumer, EventContext, MessageContext
 from .superstream import (
@@ -52,7 +52,7 @@ class SuperStreamConsumer:
         heartbeat: int = 60,
         load_balancer_mode: bool = False,
         max_retries: int = 20,
-        max_subscribers_by_connection: int = 256,
+        max_subscribers_by_connection: int = MAX_ITEM_ALLOWED,
         super_stream: str,
         super_stream_creation_option: Optional[SuperStreamCreationOption] = None,
         connection_name: str = "",
