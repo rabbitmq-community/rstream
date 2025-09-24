@@ -22,8 +22,9 @@ from . import exceptions
 from .amqp import AMQPMessage
 from .client import Addr, Client, ClientPool
 from .constants import (
+    MAX_ITEM_ALLOWED,
     ConsumerOffsetSpecification,
-    OffsetType, MAX_ITEM_ALLOWED,
+    OffsetType,
 )
 from .consumer import Consumer, EventContext, MessageContext
 from .superstream import (
