@@ -199,7 +199,7 @@ class Consumer:
         #  need to check if the current subscribers for this stream reached the max limit
 
         client = await self._get_or_create_client(stream)
-
+        await client.inc_available_id()
         # We can have multiple subscribers sharing same connection, so their ids must be distinct
         subscription_id = await self.get_available_id()
         decoder = decoder or (lambda x: x)
@@ -312,10 +312,19 @@ class Consumer:
         return subscriber.subscription_id
 
     async def get_available_id(self) -> int:
+        # ok = True
+        # for _client in self._clients.keys():
+        #     ok = ok and  await self._clients[_client].get_count_available_ids()> 0
+        #
+        # if not ok:
+        #     raise exceptions.MaxConsumersPerConnectionReached("Max consumers per connection reached")
+
         for subscribing_id in range(0, self._max_subscribers_by_connection):
             if subscribing_id not in self._subscribers:
                 return subscribing_id
 
+        # TODO: Next PR refactor the id count to client pool
+        # remove comment the above code
         raise exceptions.MaxConsumersPerConnectionReached("Max consumers per connection reached")
 
     async def unsubscribe(self, subscriber_id: int) -> None:

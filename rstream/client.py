@@ -163,7 +163,7 @@ class BaseClient:
         if stream in self._streams:
             self._streams.remove(stream)
 
-    async def get_available_id(self) -> int:
+    async def inc_available_id(self) -> int:
         for publishing_subscribing_id in range(0, self._max_clients_by_connections):
             if self._available_client_ids[publishing_subscribing_id]:
                 self._available_client_ids[publishing_subscribing_id] = False
