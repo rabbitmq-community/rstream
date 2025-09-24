@@ -13,7 +13,8 @@ from rstream import (
     SuperStreamProducer,
     amqp_decoder,
 )
-from rstream._pyamqp.message import Properties  # type: ignore[attr-defined]
+from rstream._pyamqp.message import \
+    Properties  # type: ignore[attr-defined]
 from rstream.exceptions import (
     MaxConsumersPerConnectionReached,
 )
