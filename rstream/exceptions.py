@@ -85,3 +85,11 @@ class PublisherDoesNotExist(ServerError):
 
 class OffsetNotFound(ServerError):
     code = 19
+
+
+class MaxConsumersPerConnectionReached(ServerError):
+    code = 20
+
+
+class MaxPublishersPerConnectionReached(ServerError):
+    code = 21

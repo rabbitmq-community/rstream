@@ -165,7 +165,7 @@ class BaseClient:
 
     async def get_available_id(self) -> int:
         for publishing_subscribing_id in range(0, self._max_clients_by_connections):
-            if self._available_client_ids[publishing_subscribing_id] is True:
+            if self._available_client_ids[publishing_subscribing_id]:
                 self._available_client_ids[publishing_subscribing_id] = False
                 self._current_id = publishing_subscribing_id
                 return publishing_subscribing_id

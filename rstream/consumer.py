@@ -196,14 +196,14 @@ class Consumer:
         filter_input: Optional[FilterConfiguration],
     ) -> _Subscriber:
         logger.debug("_create_subscriber(): Create subscriber")
+        #  need to check if the current subscribers for this stream reached the max limit
+
         client = await self._get_or_create_client(stream)
 
         # We can have multiple subscribers sharing same connection, so their ids must be distinct
-        # subscription_id = len([s for s in self._subscribers.values() if s.client is client]) + 1
-        subscription_id = await client.get_available_id()
-        # reference = subscriber_name or f"{stream}_subscriber_{subscription_id}"
+        subscription_id = await self.get_available_id()
         decoder = decoder or (lambda x: x)
-
+        # the ID is unique per connection
         subscriber = self._subscribers[subscription_id] = _Subscriber(
             stream=stream,
             subscription_id=subscription_id,
@@ -311,6 +311,13 @@ class Consumer:
 
         return subscriber.subscription_id
 
+    async def get_available_id(self) -> int:
+        for subscribing_id in range(0, self._max_subscribers_by_connection):
+            if subscribing_id not in self._subscribers:
+                return subscribing_id
+
+        raise exceptions.MaxConsumersPerConnectionReached("Max consumers per connection reached")
+
     async def unsubscribe(self, subscriber_id: int) -> None:
         logger.debug("unsubscribe(): UnSubscribing and removing handlers")
         subscriber = self._subscribers[subscriber_id]
@@ -382,7 +389,7 @@ class Consumer:
                     is_filtered = filter_predicate(subscriber.decoder(message))
 
             if is_filtered:
-                yield (offset, message)
+                yield offset, message
 
         subscriber.offset = frame.chunk_first_offset + frame.num_entries
 
@@ -509,7 +516,7 @@ class Consumer:
             del self._clients[stream]
 
         if self._default_client is not None:
-            if self._default_client.is_connection_alive() is False:
+            if not self._default_client.is_connection_alive():
                 await self._default_client.close()
                 self._default_client = None
 
