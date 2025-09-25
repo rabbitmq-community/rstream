@@ -238,7 +238,7 @@ class Producer:
             client = await self._get_or_create_client(stream)
 
             # We can have multiple publishers sharing same connection, so their ids must be distinct
-            publisher_id = await client.get_available_id()
+            publisher_id = await client.inc_available_id()
 
             reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
             publisher = self._publishers[stream] = _Publisher(

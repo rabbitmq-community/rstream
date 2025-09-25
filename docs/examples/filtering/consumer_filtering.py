@@ -28,9 +28,11 @@ async def consume():
     loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(consumer.close()))
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        stream = message_context.consumer.get_stream(message_context.subscriber_name)
-        offset = message_context.offset
-        print("Got message: {} from stream {}, offset {}".format(msg, stream, offset))
+        print(
+            "Got message: {} from stream {}, offset {}".format(
+                msg, message_context.stream, message_context.offset
+            )
+        )
         print("Application property: " + str(msg.application_properties[b"region"]))
         global cont
         cont = cont + 1

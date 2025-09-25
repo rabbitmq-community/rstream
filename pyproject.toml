@@ -40,3 +40,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "local_tests.*"
 ignore_errors = true
+
+[tool.isort]
+profile = "black"

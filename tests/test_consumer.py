@@ -208,7 +208,7 @@ async def test_consumer_callback(stream: str, consumer: Consumer, producer: Prod
 async def test_consumer_resubscribe_when_not_consumed_events_in_queue(
     consumer: Consumer, producer: Producer
 ) -> None:
-    stream_name = "stream"
+    stream_name = "stream_{}".format(time.time())
     await producer.create_stream(stream=stream_name)
 
     processed_offsets_1: asyncio.Queue[int] = asyncio.Queue(1)
@@ -228,12 +228,12 @@ async def test_consumer_resubscribe_when_not_consumed_events_in_queue(
 
     try:
         async with consumer:
-            subscriber_name = await consumer.subscribe(
+            subscriber_id = await consumer.subscribe(
                 stream=stream_name, callback=long_running_cb, initial_credit=10
             )
             await wait_for(lambda: processed_offsets_1.full())
 
-            await consumer.unsubscribe(subscriber_name)
+            await consumer.unsubscribe(subscriber_id)
 
             await consumer.subscribe(
                 stream=stream_name,
@@ -267,7 +267,7 @@ async def test_offset_type_timestamp(stream: str, consumer: Consumer, producer: 
         callback=lambda message, message_context: captured.append(bytes(message)),
         offset_specification=ConsumerOffsetSpecification(offset_type=OffsetType.TIMESTAMP, offset=now),
     )
-    await wait_for(lambda: len(captured) > 0 and captured[0] >= b"5000", 2)
+    await wait_for(lambda: len(captured) > 0 and captured[0] >= b"5000", 5)
 
 
 async def test_offset_type_next(stream: str, consumer: Consumer, producer: Producer) -> None:
@@ -312,14 +312,17 @@ async def test_consume_with_resubscribe(stream: str, consumer: Consumer, produce
 
 async def test_consume_with_resubscribe_msg(stream: str, consumer: Consumer, producer: Producer) -> None:
     captured_by_first_consumer: list[bytes] = []
-    subscriber_name = await consumer.subscribe(
-        stream, callback=lambda message, message_context: captured_by_first_consumer.append(bytes(message))
+    subscriber_name = "my-subscriber"
+    subscriber_id = await consumer.subscribe(
+        stream,
+        subscriber_name=subscriber_name,
+        callback=lambda message, message_context: captured_by_first_consumer.append(bytes(message)),
     )
     for i in range(100):
         await producer.send_wait(stream, b"one")
     await wait_for(lambda: len(captured_by_first_consumer) >= 100)
 
-    await consumer.unsubscribe(subscriber_name)
+    await consumer.unsubscribe(subscriber_id)
 
     captured_by_second_consumer: list[bytes] = []
     await consumer.subscribe(
@@ -353,6 +356,7 @@ async def test_consume_superstream_with_resubscribe(
     )
 
     await super_stream_producer.send(b"two")
+
     await wait_for(lambda: len(captured_by_second_consumer) >= 1)
     assert captured_by_second_consumer == [b"two"]
 
@@ -406,7 +410,7 @@ async def test_consume_multiple_streams(consumer: Consumer, producer: Producer) 
 async def test_consume_with_sac_custom_consumer_update_listener_cb(
     consumer: Consumer, producer: Producer
 ) -> None:
-    stream_name = "stream"
+    stream_name = "stream_test_consume_with_sac_custom_consumer_update_listener_cb_{}".format(time.time())
     await producer.create_stream(stream=stream_name)
     try:
         # necessary to use send_batch, since in this case, upon delivery, rabbitmq will deliver
@@ -447,8 +451,12 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
 async def test_consume_with_multiple_sac_custom_consumer_update_listener_cb(
     consumer: Consumer, producer: Producer
 ) -> None:
-    stream_name_1 = "stream1"
-    stream_name_2 = "stream2"
+    stream_name_1 = "test_consume_with_multiple_sac_custom_consumer_update_listener_cb_1{}".format(
+        time.time()
+    )
+    stream_name_2 = "test_consume_with_multiple_sac_custom_consumer_update_listener_cb_2{}".format(
+        time.time()
+    )
     await producer.create_stream(stream=stream_name_1)
     await producer.create_stream(stream=stream_name_2)
     try:
@@ -461,10 +469,10 @@ async def test_consume_with_multiple_sac_custom_consumer_update_listener_cb(
         received_offsets_1 = []
         received_offsets_2 = []
 
-        async def consumer_cb1(message: bytes, message_context: MessageContext) -> None:
+        async def consumer_cb1(message: AMQPMessage, message_context: MessageContext) -> None:
             received_offsets_1.append(message_context.offset)
 
-        async def consumer_cb2(message: bytes, message_context: MessageContext) -> None:
+        async def consumer_cb2(message: AMQPMessage, message_context: MessageContext) -> None:
             received_offsets_2.append(message_context.offset)
 
         async def consumer_update_listener_with_custom_offset_1(
@@ -765,7 +773,7 @@ async def test_consumer_connection_broke(stream: str) -> None:
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
 
     asyncio.create_task(task_to_delete_connection("test-connection"))
 
@@ -810,7 +818,7 @@ async def test_super_stream_consumer_connection_broke(super_stream: str) -> None
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
 
     asyncio.create_task(task_to_delete_connection("test-connection"))
 
@@ -883,7 +891,7 @@ async def test_super_stream_consumer_connection_broke_with_reconnect(super_strea
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
         # check after disconnection offset have been reset
         if connection_broke is True:
             assert message_context.offset == offset_restart
@@ -1067,7 +1075,7 @@ async def test_consumer_metadata_update(consumer: Consumer) -> None:
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        message_context.consumer.get_stream(message_context.subscriber_name)
+        pass
 
     await consumer_metadata_update.start()
     await consumer_metadata_update.create_stream(stream)

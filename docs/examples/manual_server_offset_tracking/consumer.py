@@ -23,19 +23,24 @@ async def on_message(msg: AMQPMessage, message_context: MessageContext):
     global lock
 
     consumer = message_context.consumer
-    stream = await message_context.consumer.stream(message_context.subscriber_name)
-    offset = message_context.offset
 
-    print("Got message: {} from stream {}, offset {}".format(msg, stream, offset))
+    print(
+        "Got message: {} from stream {}, offset {}".format(
+            msg, message_context.stream, message_context.offset
+        )
+    )
 
     # store the offset every 1000 messages received
     async with lock:
         cont = cont + 1
         # store the offset every 1000 messages received
         if cont % 1000 == 0:
-            await consumer.store_offset(
-                stream=stream, offset=offset, subscriber_name=message_context.subscriber_name
-            )
+            if message_context.subscriber_name is not None:
+                await consumer.store_offset(
+                    stream=message_context.stream,
+                    offset=message_context.offset,
+                    subscriber_name=message_context.subscriber_name,
+                )
 
 
 async def consume():

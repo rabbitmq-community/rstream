@@ -22,6 +22,7 @@ from . import exceptions
 from .amqp import AMQPMessage
 from .client import Addr, Client, ClientPool
 from .constants import (
+    MAX_ITEM_ALLOWED,
     ConsumerOffsetSpecification,
     OffsetType,
 )
@@ -52,7 +53,7 @@ class SuperStreamConsumer:
         heartbeat: int = 60,
         load_balancer_mode: bool = False,
         max_retries: int = 20,
-        max_subscribers_by_connection: int = 256,
+        max_subscribers_by_connection: int = MAX_ITEM_ALLOWED,
         super_stream: str,
         super_stream_creation_option: Optional[SuperStreamCreationOption] = None,
         connection_name: str = "",
@@ -86,7 +87,7 @@ class SuperStreamConsumer:
         self.max_retries = max_retries
         self._consumer: Optional[Consumer] = None
         self._stop_event = asyncio.Event()
-        self._subscribers: dict[str, str] = defaultdict(str)
+        self._subscribers: dict[str, int] = defaultdict(int)
         self._on_close_handler = on_close_handler
         self._connection_name = connection_name
         if self._connection_name is None or self._connection_name == "":
@@ -186,7 +187,7 @@ class SuperStreamConsumer:
                 return
 
             logger.debug("subscribe(): subscribe to a partition")
-            subscriber = await consumer_partition.subscribe(
+            subscriber_id = await consumer_partition.subscribe(
                 stream=partition,
                 callback=callback,
                 decoder=decoder,
@@ -197,7 +198,7 @@ class SuperStreamConsumer:
                 consumer_update_listener=consumer_update_listener,
                 filter_input=filter_input,
             )
-            self._subscribers[partition] = subscriber
+            self._subscribers[partition] = subscriber_id
 
     async def _create_consumer(self) -> Consumer:
         logger.debug("_create_consumer(): creating consumer if not exists")

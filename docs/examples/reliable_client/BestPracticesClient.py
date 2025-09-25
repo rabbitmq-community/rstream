@@ -183,9 +183,11 @@ async def on_message(msg: AMQPMessage, message_context: MessageContext):
     messages_consumed = messages_consumed + 1
     # some printf after some messages consumed in order to check that we are working...
     if (messages_consumed % 100000) == 0:
-        stream = await message_context.consumer.stream(message_context.subscriber_name)
-        offset = message_context.offset
-        print("Received message: {} from stream: {} - message offset: {}".format(msg, stream, offset))
+        print(
+            "Received message: {} from stream: {} - message offset: {}".format(
+                msg, message_context.stream, message_context.offset
+            )
+        )
 
 
 async def publish(rabbitmq_configuration: dict):

@@ -16,6 +16,7 @@ from typing import (
 from . import exceptions
 from .amqp import _MessageProtocol
 from .client import Client, ClientPool
+from .constants import MAX_ITEM_ALLOWED
 from .producer import ConfirmationStatus, Producer
 from .superstream import (
     DefaultSuperstreamMetadata,
@@ -57,7 +58,7 @@ class SuperStreamProducer:
         heartbeat: int = 60,
         load_balancer_mode: bool = False,
         max_retries: int = 20,
-        max_publishers_by_connection=256,
+        max_publishers_by_connection=MAX_ITEM_ALLOWED,
         default_batch_publishing_delay: float = 0.2,
         connection_name: str = "",
         filter_value_extractor: Optional[CB_F[Any]] = None,
