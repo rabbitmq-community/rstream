@@ -419,7 +419,7 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
 
         received_offsets = []
 
-        async def consumer_cb(message: AMQPMessage, message_context: MessageContext) -> None:
+        async def consumer_cb(message: bytes, message_context: MessageContext) -> None:
             received_offsets.append(message_context.offset)
 
         async def consumer_update_listener_with_custom_offset(
