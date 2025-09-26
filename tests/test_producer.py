@@ -234,8 +234,9 @@ async def test_publish_deduplication(stream: str, producer: Producer, consumer: 
     async def publish_with_ids(*ids):
         for publishing_id in ids:
             await producer.send_wait(
-                stream,
-                RawMessage(f"test_{publishing_id}".encode(), publishing_id),
+                stream=stream,
+                message=RawMessage(f"test_{publishing_id}".encode(), publishing_id=publishing_id),
+                publisher_name="MyProducerName",
             )
 
     await publish_with_ids(1, 2, 3)
@@ -259,8 +260,7 @@ async def test_publish_deduplication_async(stream: str, producer: Producer, cons
     async def publish_with_ids(*ids):
         for publishing_id in ids:
             await producer.send(
-                stream,
-                RawMessage(f"test_{publishing_id}".encode(), publishing_id),
+                stream, RawMessage(f"test_{publishing_id}".encode(), publishing_id), "MyProducerName"
             )
 
     await publish_with_ids(1, 2, 3)

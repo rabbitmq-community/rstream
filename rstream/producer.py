@@ -7,7 +7,6 @@ import asyncio
 import inspect
 import logging
 import ssl
-import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import partial
@@ -47,7 +46,7 @@ CB_F = Annotated[Callable[[MT], Awaitable[Any]], "Message callback type"]
 @dataclass
 class _Publisher:
     id: int
-    reference: str
+    reference: Optional[str]
     stream: str
     sequence: utils.MonotonicSeq
     client: Client
@@ -108,7 +107,7 @@ class Producer:
         self._clients: dict[str, Client] = {}
         self._publishers: dict[str, _Publisher] = {}
         self._waiting_for_confirm: dict[
-            str, dict[asyncio.Future[None] | CB[ConfirmationStatus], set[int]]
+            int, dict[asyncio.Future[None] | CB[ConfirmationStatus], set[int]]
         ] = defaultdict(dict)
         self._lock = asyncio.Lock()
         # dictionary [stream][list] of buffered messages to send asynchronously
@@ -240,7 +239,8 @@ class Producer:
             # We can have multiple publishers sharing same connection, so their ids must be distinct
             publisher_id = await client.inc_available_id()
 
-            reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
+            reference = publisher_name
+            # reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
             publisher = self._publishers[stream] = _Publisher(
                 id=publisher_id,
                 stream=stream,
@@ -256,11 +256,12 @@ class Producer:
                 publisher_id=publisher.id,
             )
 
-            sequence = await client.query_publisher_sequence(
-                stream=stream,
-                reference=reference,
-            )
-            publisher.sequence.set(sequence + 1)
+            if reference is not None:
+                sequence = await client.query_publisher_sequence(
+                    stream=stream,
+                    reference=reference,
+                )
+                publisher.sequence.set(sequence + 1)
 
         except StreamDoesNotExist as e:
             await self._maybe_clean_up_during_lost_connection(stream)
@@ -275,17 +276,17 @@ class Producer:
         client.add_handler(
             schema.PublishConfirm,
             partial(self._on_publish_confirm, publisher=publisher),
-            name=publisher.reference,
+            name=str(publisher.id),
         )
         client.add_handler(
             schema.PublishError,
             partial(self._on_publish_error, publisher=publisher),
-            name=publisher.reference,
+            name=str(publisher.id),
         )
         client.add_handler(
             schema.MetadataUpdate,
             partial(self._on_metadata_update),
-            name=publisher.reference,
+            name=str(publisher.id),
         )
 
         return publisher
@@ -378,16 +379,16 @@ class Producer:
         if not sync:
             logger.debug("_send_batch: Not sync case")
             if callback is not None:
-                if callback not in self._waiting_for_confirm[publisher.reference]:
-                    self._waiting_for_confirm[publisher.reference][callback] = set()
+                if callback not in self._waiting_for_confirm[publisher.id]:
+                    self._waiting_for_confirm[publisher.id][callback] = set()
 
-                self._waiting_for_confirm[publisher.reference][callback].update(publishing_ids)
+                self._waiting_for_confirm[publisher.id][callback].update(publishing_ids)
 
         # this is just called in case of send_wait
         else:
             logger.debug("_send_batch: sync case")
             future: asyncio.Future[None] = asyncio.Future()
-            self._waiting_for_confirm[publisher.reference][future] = publishing_ids.copy()
+            self._waiting_for_confirm[publisher.id][future] = publishing_ids.copy()
             await asyncio.wait_for(future, timeout)
 
         return list(publishing_ids)
@@ -515,10 +516,10 @@ class Producer:
             publishing_ids.update([m.publishing_id for m in messages])
 
         for callback in publishing_ids_callback:
-            if callback not in self._waiting_for_confirm[publisher.reference]:
-                self._waiting_for_confirm[publisher.reference][callback] = set()
+            if callback not in self._waiting_for_confirm[publisher.id]:
+                self._waiting_for_confirm[publisher.id][callback] = set()
 
-            self._waiting_for_confirm[publisher.reference][callback].update(publishing_ids_callback[callback])
+            self._waiting_for_confirm[publisher.id][callback].update(publishing_ids_callback[callback])
 
         return list(publishing_ids)
 
@@ -634,7 +635,7 @@ class Producer:
         if frame.publisher_id != publisher.id:
             return
 
-        waiting = self._waiting_for_confirm[publisher.reference]
+        waiting = self._waiting_for_confirm[publisher.id]
         for confirmation in list(waiting):
             logger.debug("_on_publish_confirm: looping over confirmations")
             ids = waiting[confirmation]
@@ -657,7 +658,7 @@ class Producer:
         if frame.publisher_id != publisher.id:
             return
 
-        waiting = self._waiting_for_confirm[publisher.reference]
+        waiting = self._waiting_for_confirm[publisher.id]
         for error in frame.errors:
             exc = exceptions.ServerError.from_code(error.response_code)
             for confirmation in list(waiting):
