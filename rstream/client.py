@@ -600,7 +600,9 @@ class Client(BaseClient):
             )
         )
 
-    async def declare_publisher(self, stream: str, reference: str, publisher_id: int) -> None:
+    async def declare_publisher(self, stream: str, reference: Optional[str], publisher_id: int) -> None:
+        if reference is None:
+            reference = ""
         await self.sync_request(
             schema.DeclarePublisher(
                 self._corr_id_seq.next(),
