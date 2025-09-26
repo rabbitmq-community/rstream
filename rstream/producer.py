@@ -33,7 +33,7 @@ from .compression import (
     CompressionType,
     ICompressionCodec,
 )
-from .constants import Key, SlasMechanism
+from .constants import Key, SlasMechanism, MAX_ITEM_ALLOWED
 from .exceptions import StreamDoesNotExist
 from .utils import OnClosedErrorInfo, RawMessage
 
@@ -84,7 +84,7 @@ class Producer:
         heartbeat: int = 60,
         load_balancer_mode: bool = False,
         max_retries: int = 20,
-        max_publishers_by_connection=256,
+        max_publishers_by_connection= MAX_ITEM_ALLOWED,
         default_batch_publishing_delay: float = 3,
         default_context_switch_value: int = 1000,
         connection_name: str = "",
@@ -106,7 +106,7 @@ class Producer:
         )
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}
-        self._publishers: dict[str, _Publisher] = {}
+        self._publishers: dict[int, _Publisher] = {}
         self._waiting_for_confirm: dict[
             str, dict[asyncio.Future[None] | CB[ConfirmationStatus], set[int]]
         ] = defaultdict(dict)
@@ -238,13 +238,15 @@ class Producer:
             client = await self._get_or_create_client(stream)
 
             # We can have multiple publishers sharing same connection, so their ids must be distinct
-            publisher_id = await client.inc_available_id()
+            await client.inc_available_id()
 
-            reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
-            publisher = self._publishers[stream] = _Publisher(
+            # reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
+            publisher_id = await self.get_available_id()
+
+            publisher = self._publishers[publisher_id] = _Publisher(
                 id=publisher_id,
                 stream=stream,
-                reference=reference,
+                reference=publisher_name,
                 sequence=utils.MonotonicSeq(),
                 client=client,
             )
@@ -289,6 +291,22 @@ class Producer:
         )
 
         return publisher
+
+    async def get_available_id(self) -> int:
+        # ok = True
+        # for _client in self._clients.keys():
+        #     ok = ok and  await self._clients[_client].get_count_available_ids()> 0
+        #
+        # if not ok:
+        #     raise exceptions.MaxConsumersPerConnectionReached("Max consumers per connection reached")
+
+        for publisher_id in range(0, self._max_publishers_by_connection):
+            if publisher_id not in self._publishers:
+                return publisher_id
+
+        # TODO: Next PR refactor the id count to client pool
+        # remove comment the above code
+        raise exceptions.MaxPublishersPerConnectionReached("Max publishers per connection reached")
 
     async def send_batch(
         self,
