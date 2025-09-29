@@ -483,7 +483,6 @@ class Producer:
                         )
                     # publishing_ids.update([m.publishing_id for m in messages])
                     messages.clear()
-                publishing_id = 0
                 for _ in range(item.entry.messages_count()):
                     publishing_id = publisher.sequence.next()
 
