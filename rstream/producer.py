@@ -184,9 +184,9 @@ class Producer:
                     logger.warning("timeout when closing producer and deleting publisher")
                 except BaseException:
                     logger.exception("exception in delete_publisher in Producer.close")
-            publisher.client.remove_handler(schema.PublishConfirm, publisher.reference)
-            publisher.client.remove_handler(schema.PublishError, publisher.reference)
-            publisher.client.remove_handler(schema.MetadataUpdate, publisher.reference)
+            publisher.client.remove_handler(schema.PublishConfirm, str(publisher.id))
+            publisher.client.remove_handler(schema.PublishError, str(publisher.id))
+            publisher.client.remove_handler(schema.MetadataUpdate, str(publisher.id))
 
         self._publishers.clear()
 
@@ -702,9 +702,9 @@ class Producer:
         if stream in self._publishers:
             publisher = self._publishers[stream]
             await publisher.client.delete_publisher(publisher.id)
-            publisher.client.remove_handler(schema.PublishConfirm, publisher.reference)
-            publisher.client.remove_handler(schema.PublishError, publisher.reference)
-            publisher.client.remove_handler(schema.MetadataUpdate, publisher.reference)
+            publisher.client.remove_handler(schema.PublishConfirm, str(publisher.id))
+            publisher.client.remove_handler(schema.PublishError, str(publisher.id))
+            publisher.client.remove_handler(schema.MetadataUpdate, str(publisher.id))
             del self._publishers[stream]
 
     async def delete_stream(self, stream: str, missing_ok: bool = False) -> None:
