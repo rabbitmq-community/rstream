@@ -126,7 +126,6 @@ class Producer:
         self._close_called = False
         self._connection_name = connection_name
         self._filter_value_extractor: Optional[CB_F[Any]] = filter_value_extractor
-        # self.publisher_id = 0
         self._max_publishers_by_connection = max_publishers_by_connection
 
         if self._connection_name is None or self._connection_name == "":
