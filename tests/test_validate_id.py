@@ -163,3 +163,29 @@ async def test_validate_subscriber_name_to_super_stream(
 
     await sub("my-subscriber-name")
     await sub(None)
+
+
+async def test_validate_publisher_id_to_stream(producer: Producer, pytestconfig) -> None:
+    now = int(time.time())
+    streams = [
+        "test_test_validate_publisher_id_to_stream_0_{}".format(now),
+        "test_test_validate_publisher_id_to_stream_1_{}".format(now),
+        "test_test_validate_publisher_id_to_stream_2_{}".format(now),
+    ]
+
+    for stream in streams:
+        await producer.create_stream(stream)
+
+    for stream in streams:
+        for i in range(2):
+            await producer.send_wait(stream, AMQPMessage(body=bytes("hello: {}".format(i), "utf-8")))
+
+    await asyncio.sleep(1)
+    assert len(producer._publishers) == 3
+    for _publisher in producer._publishers.values():
+        assert _publisher.id in [0, 1, 2]
+
+    await producer.close()
+    assert len(producer._publishers) == 0
+    for stream in streams:
+        await producer.delete_stream(stream)

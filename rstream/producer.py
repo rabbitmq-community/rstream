@@ -32,8 +32,11 @@ from .compression import (
     CompressionType,
     ICompressionCodec,
 )
-from .constants import Key, SlasMechanism
-from .exceptions import StreamDoesNotExist
+from .constants import MAX_ITEM_ALLOWED, Key, SlasMechanism
+from .exceptions import (
+    MaxPublishersPerConnectionReached,
+    StreamDoesNotExist,
+)
 from .utils import OnClosedErrorInfo, RawMessage
 
 MessageT = TypeVar("MessageT", _MessageProtocol, bytes)
@@ -83,7 +86,7 @@ class Producer:
         heartbeat: int = 60,
         load_balancer_mode: bool = False,
         max_retries: int = 20,
-        max_publishers_by_connection=256,
+        max_publishers_by_connection=MAX_ITEM_ALLOWED,
         default_batch_publishing_delay: float = 3,
         default_context_switch_value: int = 1000,
         connection_name: str = "",
@@ -123,7 +126,7 @@ class Producer:
         self._close_called = False
         self._connection_name = connection_name
         self._filter_value_extractor: Optional[CB_F[Any]] = filter_value_extractor
-        self.publisher_id = 0
+        # self.publisher_id = 0
         self._max_publishers_by_connection = max_publishers_by_connection
 
         if self._connection_name is None or self._connection_name == "":
@@ -229,15 +232,14 @@ class Producer:
     ) -> _Publisher:
         if stream in self._publishers:
             publisher = self._publishers[stream]
-            if publisher_name is not None:
-                assert publisher.reference == publisher_name
             return publisher
         try:
             logger.debug("_get_or_create_publisher(): Getting/Creating new publisher")
             client = await self._get_or_create_client(stream)
 
             # We can have multiple publishers sharing same connection, so their ids must be distinct
-            publisher_id = await client.inc_available_id()
+            publisher_id = self._get_next_available_id()
+            await client.inc_available_id()
 
             reference = publisher_name
             # reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
@@ -290,6 +292,15 @@ class Producer:
         )
 
         return publisher
+
+    def _get_next_available_id(self) -> int:
+        # given this list self._publishers we need to find the next available id
+        # we need to loop the list of publishers and find the first available id
+        for i in range(0, self._max_publishers_by_connection):
+            if all(p.id != i for p in self._publishers.values()):
+                return i
+
+        raise MaxPublishersPerConnectionReached("Max publishers per connection reached")
 
     async def send_batch(
         self,
@@ -474,6 +485,7 @@ class Producer:
                         )
                     # publishing_ids.update([m.publishing_id for m in messages])
                     messages.clear()
+                publishing_id = 0
                 for _ in range(item.entry.messages_count()):
                     publishing_id = publisher.sequence.next()
 
