@@ -39,6 +39,14 @@ def pytest_addoption(parser):
     parser.addoption("--rmq-vhost", action="store", default="/")
     parser.addoption("--rmq-username", action="store", default="guest")
     parser.addoption("--rmq-password", action="store", default="guest")
+    # options for cluster testing. we keep it separate to avoid confusion
+    parser.addoption("--rmq-cluster-host", action="store", default="localhost")
+    parser.addoption("--rmq-cluster-port", action="store", default=5553)
+    parser.addoption("--rmq-cluster-ssl", action="store", type=bool, default=False)
+    parser.addoption("--rmq-cluster-vhost", action="store", default="/")
+    parser.addoption("--rmq-cluster-username", action="store", default="guest")
+    parser.addoption("--rmq-cluster-password", action="store", default="guest")
+    parser.addoption("--rmq-cluster-load-balancer", action="store", type=bool, default=True)
 
 
 @pytest_asyncio.fixture()
@@ -324,6 +332,47 @@ async def super_stream_consumer_for_sac4(pytestconfig, ssl_context):
         frame_max=1024 * 1024,
         heartbeat=60,
         super_stream="test-super-stream",
+    )
+    await consumer.start()
+    try:
+        yield consumer
+    finally:
+        await consumer.close()
+
+
+# cluster fixtures
+
+
+@pytest_asyncio.fixture()
+async def cluster_producer(pytestconfig):
+    producer = Producer(
+        host=pytestconfig.getoption("rmq_cluster_host"),
+        port=pytestconfig.getoption("rmq_cluster_port"),
+        ssl_context=None,
+        username=pytestconfig.getoption("rmq_cluster_username"),
+        password=pytestconfig.getoption("rmq_cluster_password"),
+        frame_max=1024 * 1024,
+        heartbeat=60,
+        load_balancer_mode=pytestconfig.getoption("rmq_cluster_load_balancer"),
+    )
+    await producer.start()
+    try:
+        yield producer
+    finally:
+        await producer.close()
+
+
+@pytest_asyncio.fixture()
+async def cluster_consumer(pytestconfig):
+    consumer = Consumer(
+        host=pytestconfig.getoption("rmq_cluster_host"),
+        port=pytestconfig.getoption("rmq_cluster_port"),
+        ssl_context=None,
+        username=pytestconfig.getoption("rmq_cluster_username"),
+        password=pytestconfig.getoption("rmq_cluster_password"),
+        frame_max=1024 * 1024,
+        heartbeat=60,
+        load_balancer_mode=pytestconfig.getoption("rmq_cluster_load_balancer"),
     )
     await consumer.start()
     try:

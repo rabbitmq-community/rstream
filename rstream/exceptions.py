@@ -87,9 +87,9 @@ class OffsetNotFound(ServerError):
     code = 19
 
 
-class MaxConsumersPerConnectionReached(ServerError):
+class MaxConsumersPerInstance(ServerError):
     code = 20
 
 
-class MaxPublishersPerConnectionReached(ServerError):
+class MaxPublishersPerInstance(ServerError):
     code = 21

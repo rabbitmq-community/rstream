@@ -1,0 +1,69 @@
+version: "3"
+services:
+  rabbit_node0:
+    environment:
+      - RABBITMQ_ERLANG_COOKIE='secret_cookie'
+      - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbitmq_stream advertised_host node0 advertised_port 5562
+    networks:
+      - back
+    hostname: node0
+    image: rabbitmq:4-management
+    pull_policy: always
+    ports:
+      - "5561:5551"
+      - "5562:5552"
+      - "5682:5672"
+    tty: true
+    volumes:
+     - ./conf/:/etc/rabbitmq/
+     - "./tls-gen/basic/result/:/certs"
+     - ./data0/:/var/lib/rabbitmq/
+  rabbit_node1:
+    environment:
+      - RABBITMQ_ERLANG_COOKIE='secret_cookie'
+      - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbitmq_stream advertised_host node1 advertised_port 5572
+    networks:
+      - back
+    hostname: node1
+    image: rabbitmq:4-management
+    pull_policy: always
+    ports:
+      - "5571:5551"
+      - "5572:5552"
+      - "5692:5672"
+    tty: true
+    volumes:
+      - ./conf/:/etc/rabbitmq/
+      - "./tls-gen/basic/result/:/certs"
+      - ./data1/:/var/lib/rabbitmq/
+  rabbit_node2:
+    environment:
+      - RABBITMQ_ERLANG_COOKIE='secret_cookie'
+      - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbitmq_stream advertised_host node2 advertised_port 5582
+    networks:
+      - back
+    hostname: node2
+    image: rabbitmq:4-management
+    pull_policy: always
+    ports:
+      - "5581:5551"
+      - "5582:5552"
+      - "5602:5672"
+    tty: true
+    volumes:
+      - ./conf/:/etc/rabbitmq/
+      - "./tls-gen/basic/result/:/certs"
+      - ./data2/:/var/lib/rabbitmq/
+  haproxy:
+    image: haproxy-rabbitmq-cluster
+#    container_name: haproxy
+    hostname: haproxy
+    ports:
+      - "5553:5552"
+      - "5554:5551"
+      - "5674:5672"
+      - "15673:15672"
+    networks:
+      - back
+networks:
+  back:

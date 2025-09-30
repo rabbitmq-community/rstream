@@ -34,7 +34,7 @@ from .compression import (
 )
 from .constants import MAX_ITEM_ALLOWED, Key, SlasMechanism
 from .exceptions import (
-    MaxPublishersPerConnectionReached,
+    MaxPublishersPerInstance,
     StreamDoesNotExist,
 )
 from .utils import OnClosedErrorInfo, RawMessage
@@ -108,7 +108,7 @@ class Producer:
         )
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}
-        self._publishers: dict[str, _Publisher] = {}
+        self._publishers: dict[int, _Publisher] = {}
         self._waiting_for_confirm: dict[
             int, dict[asyncio.Future[None] | CB[ConfirmationStatus], set[int]]
         ] = defaultdict(dict)
@@ -230,20 +230,20 @@ class Producer:
         stream: str,
         publisher_name: Optional[str] = None,
     ) -> _Publisher:
-        if stream in self._publishers:
-            publisher = self._publishers[stream]
+        publisher = self._find_producer_by_stream(stream)
+        if publisher is not None:
             return publisher
+        publisher_id = self._get_next_available_id()
         try:
             logger.debug("_get_or_create_publisher(): Getting/Creating new publisher")
             client = await self._get_or_create_client(stream)
 
             # We can have multiple publishers sharing same connection, so their ids must be distinct
-            publisher_id = self._get_next_available_id()
             await client.inc_available_id()
 
             reference = publisher_name
             # reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
-            publisher = self._publishers[stream] = _Publisher(
+            publisher = self._publishers[publisher_id] = _Publisher(
                 id=publisher_id,
                 stream=stream,
                 reference=reference,
@@ -266,11 +266,11 @@ class Producer:
                 publisher.sequence.set(sequence + 1)
 
         except StreamDoesNotExist as e:
-            await self._maybe_clean_up_during_lost_connection(stream)
+            await self._maybe_clean_up_during_lost_connection(publisher_id)
             logger.exception("Error in _get_or_create_publisher: stream does not exists anymore")
             raise e
         except Exception as ex:
-            await self._maybe_clean_up_during_lost_connection(stream)
+            await self._maybe_clean_up_during_lost_connection(publisher_id)
             logger.exception("error declaring publisher")
             raise ex
 
@@ -296,11 +296,11 @@ class Producer:
     def _get_next_available_id(self) -> int:
         # given this list self._publishers we need to find the next available id
         # we need to loop the list of publishers and find the first available id
-        for i in range(0, self._max_publishers_by_connection):
+        for i in range(0, MAX_ITEM_ALLOWED):
             if all(p.id != i for p in self._publishers.values()):
                 return i
 
-        raise MaxPublishersPerConnectionReached("Max publishers per connection reached")
+        raise MaxPublishersPerInstance("Max publishers per connection reached")
 
     async def send_batch(
         self,
@@ -693,7 +693,9 @@ class Producer:
     async def _on_metadata_update(self, frame: schema.MetadataUpdate) -> None:
         logger.debug("_on_metadata_update: On metadata update event triggered on producer")
         async with self._lock:
-            await self._maybe_clean_up_during_lost_connection(frame.metadata_info.stream)
+            publisher = self._find_producer_by_stream(frame.metadata_info.stream)
+            if publisher is not None:
+                await self._maybe_clean_up_during_lost_connection(publisher.id)
 
     async def create_stream(
         self,
@@ -710,14 +712,21 @@ class Producer:
             finally:
                 await self._close_locator_connection()
 
+    def _find_producer_by_stream(self, stream: str) -> Optional[_Publisher]:
+        for publisher in self._publishers.values():
+            if publisher.stream == stream:
+                return publisher
+        return None
+
     async def clean_up_publishers(self, stream: str):
-        if stream in self._publishers:
-            publisher = self._publishers[stream]
+        publisher = self._find_producer_by_stream(stream)
+        while publisher:
             await publisher.client.delete_publisher(publisher.id)
             publisher.client.remove_handler(schema.PublishConfirm, str(publisher.id))
             publisher.client.remove_handler(schema.PublishError, str(publisher.id))
             publisher.client.remove_handler(schema.MetadataUpdate, str(publisher.id))
-            del self._publishers[stream]
+            del self._publishers[publisher.id]
+            publisher = self._find_producer_by_stream(stream)
 
     async def delete_stream(self, stream: str, missing_ok: bool = False) -> None:
         await self.clean_up_publishers(stream)
@@ -768,29 +777,32 @@ class Producer:
             await (await self.default_client).close()
             self._default_client = None
 
-    async def _maybe_clean_up_during_lost_connection(self, stream: str):
+    async def _maybe_clean_up_during_lost_connection(self, publisher_id: int):
         logger.debug(
             "_maybe_clean_up_during_lost_connection: Cleaning after disconnection or metaata update events"
         )
 
         await asyncio.sleep(randrange(3))
-
-        if stream in self._publishers:
+        stream = self._publishers[publisher_id].stream
+        if publisher_id in self._publishers:
             # try to delete the publisher if deadling
             try:
                 await asyncio.wait_for(
-                    self._publishers[stream].client.delete_publisher(self._publishers[stream].id), 3
+                    self._publishers[publisher_id].client.delete_publisher(self._publishers[publisher_id].id),
+                    3,
                 )
             except asyncio.TimeoutError:
                 logger.warning("Timeout deleting publisher in maybe_clean_up_during_lost_connection")
-            if self._publishers[stream].client.is_connection_alive():
-                await self._publishers[stream].client.remove_stream(stream)
-                await self._publishers[stream].client.free_available_id(self._publishers[stream].id)
-                if await self._publishers[stream].client.get_stream_count() == 0:
-                    await self._publishers[stream].client.close()
+            if self._publishers[publisher_id].client.is_connection_alive():
+                await self._publishers[publisher_id].client.remove_stream(
+                    self._publishers[publisher_id].stream
+                )
+                await self._publishers[publisher_id].client.free_available_id()
+                if await self._publishers[publisher_id].client.get_stream_count() == 0:
+                    await self._publishers[publisher_id].client.close()
             else:
-                await self._publishers[stream].client.close()
-            del self._publishers[stream]
+                await self._publishers[publisher_id].client.close()
+            del self._publishers[publisher_id]
 
         if stream in self._clients:
             del self._clients[stream]
@@ -800,4 +812,6 @@ class Producer:
         logger.debug("_on_connection_closed: Notification of socket disconnections")
         async with self._lock:
             for stream in disconnection_info.streams:
-                await self._maybe_clean_up_during_lost_connection(stream)
+                pub = self._find_producer_by_stream(stream)
+                if pub is not None:
+                    await self._maybe_clean_up_during_lost_connection(pub.id)

@@ -178,8 +178,12 @@ class BaseClient:
                 count = count + 1
         return count
 
-    async def free_available_id(self, publishing_subscribing_id):
-        self._available_client_ids[publishing_subscribing_id] = True
+    async def free_available_id(self):
+        # loop _available_client_ids to find the first occuped it and free it
+        for _available_client_id in self._available_client_ids:
+            if not _available_client_id:
+                _available_client_id = True
+                return
 
     async def send_publish_frame(self, frame: schema.Publish, version: int = 1) -> None:
         logger.debug("Sending frame: %s", frame)
