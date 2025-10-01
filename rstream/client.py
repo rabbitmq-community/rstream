@@ -32,9 +32,9 @@ from . import (
     utils,
 )
 from .connection import Connection, ConnectionClosed
-from .constants import SlasMechanism
+from .constants import MAX_ITEM_ALLOWED, SlasMechanism
 from .schema import OffsetSpecification
-from .utils import OnClosedErrorInfo
+from .utils import AtomicInteger, OnClosedErrorInfo
 
 FT = TypeVar("FT", bound=schema.Frame)
 HT = Annotated[
@@ -108,7 +108,7 @@ class BaseClient:
 
         self._streams: list[str] = []
         # used to assing publish_ids and subscribe_ids
-        self._available_client_ids: list[bool] = [True for i in range(max_clients_by_connections)]
+        self._available_client_ids: AtomicInteger = AtomicInteger(0)
         self._current_id = 0
 
     def start_task(self, name: str, coro: Awaitable[None]) -> None:
@@ -164,26 +164,13 @@ class BaseClient:
             self._streams.remove(stream)
 
     async def inc_available_id(self) -> int:
-        for publishing_subscribing_id in range(0, self._max_clients_by_connections):
-            if self._available_client_ids[publishing_subscribing_id]:
-                self._available_client_ids[publishing_subscribing_id] = False
-                self._current_id = publishing_subscribing_id
-                return publishing_subscribing_id
-        return self._current_id
+        return self._available_client_ids.inc()
 
     async def get_count_available_ids(self):
-        count = 0
-        for slot in self._available_client_ids:
-            if slot is True:
-                count = count + 1
-        return count
+        return self._available_client_ids.value
 
     async def free_available_id(self):
-        # loop _available_client_ids to find the first occuped it and free it
-        for _available_client_id in self._available_client_ids:
-            if not _available_client_id:
-                _available_client_id = True
-                return
+        self._available_client_ids.dec()
 
     async def send_publish_frame(self, frame: schema.Publish, version: int = 1) -> None:
         logger.debug("Sending frame: %s", frame)
@@ -740,7 +727,7 @@ class ClientPool:
         connection_closed_handler: Optional[CB[OnClosedErrorInfo]] = None,
         stream: Optional[str] = None,
         sasl_configuration_mechanism: Optional[SlasMechanism] = None,
-        max_clients_by_connections: int = 256,
+        max_clients_by_connections: int = MAX_ITEM_ALLOWED,
     ) -> Client:
         """Get a client according to `addr` parameter
 

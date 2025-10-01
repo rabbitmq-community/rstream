@@ -47,6 +47,8 @@ def pytest_addoption(parser):
     parser.addoption("--rmq-cluster-username", action="store", default="guest")
     parser.addoption("--rmq-cluster-password", action="store", default="guest")
     parser.addoption("--rmq-cluster-load-balancer", action="store", type=bool, default=True)
+    # HTTP port for management API in cluster testing
+    parser.addoption("--rmq-cluster-http-port", action="store", type=int, default=15673)
 
 
 @pytest_asyncio.fixture()
@@ -379,3 +381,8 @@ async def cluster_consumer(pytestconfig):
         yield consumer
     finally:
         await consumer.close()
+
+
+@pytest_asyncio.fixture()
+async def http_cluster_port(pytestconfig):
+    return pytestconfig.getoption("rmq_cluster_http_port")

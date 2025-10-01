@@ -288,14 +288,14 @@ async def test_offset_type_next(stream: str, consumer: Consumer, producer: Produ
 
 async def test_consume_with_resubscribe(stream: str, consumer: Consumer, producer: Producer) -> None:
     captured_by_first_consumer: list[bytes] = []
-    subscriber_name = await consumer.subscribe(
+    subscriber_id = await consumer.subscribe(
         stream, callback=lambda message, message_context: captured_by_first_consumer.append(bytes(message))
     )
     await producer.send_wait(stream, b"one")
     await wait_for(lambda: len(captured_by_first_consumer) >= 1)
     assert captured_by_first_consumer == [b"one"]
 
-    await consumer.unsubscribe(subscriber_name)
+    await consumer.unsubscribe(subscriber_id)
 
     captured_by_second_consumer: list[bytes] = []
     await consumer.subscribe(

@@ -19,7 +19,7 @@ from typing import (
     Union,
 )
 
-from . import exceptions, schema
+from . import exceptions, schema, utils
 from .amqp import AMQPMessage
 from .client import Addr, Client, ClientPool
 from .constants import (
@@ -31,6 +31,7 @@ from .constants import (
     OffsetType,
     SlasMechanism,
 )
+from .exceptions import StreamAlreadySubscribed
 from .schema import OffsetSpecification
 from .utils import FilterConfiguration, OnClosedErrorInfo
 
@@ -115,6 +116,7 @@ class Consumer:
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}
         self._subscribers: dict[int, _Subscriber] = {}
+        self._last_subscriber_id = utils.AtomicInteger(-1)
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self._on_close_handler = on_close_handler
@@ -205,8 +207,13 @@ class Consumer:
     ) -> _Subscriber:
         logger.debug("_create_subscriber(): Create subscriber")
         #  need to check if the current subscribers for this stream reached the max limit
-
         # We can have multiple subscribers sharing same connection, so their ids must be distinct
+
+        # select to see if there is already a stream for this instance
+
+        for value in self._subscribers.values():
+            if value.stream == stream:
+                raise StreamAlreadySubscribed("Stream  {} already subscribed".format(stream))
 
         client = await self._get_or_create_client(stream)
         await client.inc_available_id()
@@ -323,12 +330,20 @@ class Consumer:
 
     async def get_available_id(self) -> int:
 
-        for subscribing_id in range(0, MAX_ITEM_ALLOWED):
-            if subscribing_id not in self._subscribers:
-                return subscribing_id
+        # as first loop we always go ahead with the ID to avoid race condition
+        # during the reassign of the ID. We have seen it in some edge cases with the
+        # other clients
+        if self._last_subscriber_id.value < MAX_ITEM_ALLOWED - 1:
+            return self._last_subscriber_id.inc()
 
-        # TODO: Next PR refactor the id count to client pool
-        # remove comment the above code
+        # if the last id is greater than MAX_ITEM_ALLOWED
+        # we need to loop through all the IDs to find an available one
+        for subscribing_id in range(0, MAX_ITEM_ALLOWED - 1):
+            if subscribing_id not in self._subscribers:
+                return self._last_subscriber_id.swap_value(subscribing_id)
+
+        # if we reach this point it means we have reached the max limit of subscribers
+        # each subscriber has a unique ID and can't be > MAX_ITEM_ALLOWED
         raise exceptions.MaxConsumersPerInstance("Max consumers per connection reached")
 
     async def unsubscribe(self, subscriber_id: int) -> None:
@@ -356,6 +371,7 @@ class Consumer:
         if stream in self._clients:
             await self._clients[stream].remove_stream(stream)
             await self._clients[stream].free_available_id()
+            del self._clients[stream]
 
         del self._subscribers[subscriber_id]
 

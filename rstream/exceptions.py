@@ -15,6 +15,10 @@ class ServerError(Exception):
         return cls._registry.get(code, cls)
 
 
+class ClientError(Exception):
+    pass
+
+
 class StreamDoesNotExist(ServerError):
     code = 2
 
@@ -87,9 +91,13 @@ class OffsetNotFound(ServerError):
     code = 19
 
 
-class MaxConsumersPerInstance(ServerError):
-    code = 20
+class MaxConsumersPerInstance(ClientError):
+    pass
 
 
-class MaxPublishersPerInstance(ServerError):
-    code = 21
+class MaxPublishersPerInstance(ClientError):
+    pass
+
+
+class StreamAlreadySubscribed(ClientError):
+    pass
