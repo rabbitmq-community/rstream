@@ -241,7 +241,6 @@ class Producer:
             await client.inc_available_id()
 
             reference = publisher_name
-            # reference = publisher_name or f"{stream}_publisher_{publisher_id}_{str(uuid.uuid4())}"
             publisher = self._publishers[publisher_id] = _Publisher(
                 id=publisher_id,
                 stream=stream,
