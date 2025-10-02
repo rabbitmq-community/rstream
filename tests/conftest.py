@@ -386,3 +386,92 @@ async def cluster_consumer(pytestconfig):
 @pytest_asyncio.fixture()
 async def http_cluster_port(pytestconfig):
     return pytestconfig.getoption("rmq_cluster_http_port")
+
+
+# super stream producer for the cluster
+@pytest_asyncio.fixture()
+async def cluster_super_stream_producer(pytestconfig):
+    producer = SuperStreamProducer(
+        host=pytestconfig.getoption("rmq_cluster_host"),
+        port=pytestconfig.getoption("rmq_cluster_port"),
+        ssl_context=None,
+        username=pytestconfig.getoption("rmq_cluster_username"),
+        password=pytestconfig.getoption("rmq_cluster_password"),
+        frame_max=1024 * 1024,
+        heartbeat=60,
+        routing=RouteType.Hash,
+        routing_extractor=routing_extractor,
+        super_stream="cluster_super_stream_test",
+        load_balancer_mode=pytestconfig.getoption("rmq_cluster_load_balancer"),
+    )
+    await producer.start()
+    try:
+        yield producer
+    finally:
+        await producer.close()
+
+
+@pytest_asyncio.fixture()
+async def cluster_super_stream_consumer(pytestconfig):
+    consumer = SuperStreamConsumer(
+        host=pytestconfig.getoption("rmq_cluster_host"),
+        port=pytestconfig.getoption("rmq_cluster_port"),
+        ssl_context=None,
+        username=pytestconfig.getoption("rmq_cluster_username"),
+        password=pytestconfig.getoption("rmq_cluster_password"),
+        frame_max=1024 * 1024,
+        heartbeat=60,
+        super_stream="cluster_super_stream_test",
+        load_balancer_mode=pytestconfig.getoption("rmq_cluster_load_balancer"),
+    )
+    await consumer.start()
+    try:
+        yield consumer
+    finally:
+        await consumer.close()
+
+
+@pytest_asyncio.fixture()
+async def no_auth_cluster_client(pytestconfig, ssl_context):
+    rstream.client.DEFAULT_REQUEST_TIMEOUT = 1
+    client = Client(
+        host=pytestconfig.getoption("rmq_cluster_host"),
+        port=pytestconfig.getoption("rmq_cluster_port"),
+        frame_max=1024 * 1024,
+        heartbeat=60,
+        ssl_context=ssl_context,
+    )
+    await client.start()
+    try:
+        yield client
+    finally:
+        await client.close()
+
+
+@pytest_asyncio.fixture()
+async def cluster_client(no_auth_cluster_client: Client, pytestconfig):
+    await no_auth_cluster_client.authenticate(
+        vhost=pytestconfig.getoption("rmq_cluster_vhost"),
+        username=pytestconfig.getoption("rmq_cluster_username"),
+        password=pytestconfig.getoption("rmq_cluster_password"),
+    )
+    return no_auth_cluster_client
+
+
+@pytest_asyncio.fixture()
+async def super_stream_cluster(cluster_client: Client):
+    try:
+        await cluster_client.delete_super_stream("cluster_super_stream_test")
+    except Exception:
+        # it doesn't matter if it fails
+        pass
+
+    await cluster_client.create_super_stream(
+        "cluster_super_stream_test",
+        ["cluster_super_stream_test-0", "cluster_super_stream_test-1", "cluster_super_stream_test-2"],
+        ["key1", "key2", "key3"],
+    )
+    try:
+        yield "cluster_super_stream_test"
+    finally:
+        await cluster_client.delete_super_stream("cluster_super_stream_test")

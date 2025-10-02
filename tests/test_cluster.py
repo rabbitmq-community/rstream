@@ -253,53 +253,112 @@ async def test_validate_publisher_id_to_stream(producer: Producer, pytestconfig)
         await producer.delete_stream(stream)
 
 
-# cluster test
-#  skip if not in github actions
-@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Skip cluster tests in GitHub Actions")
-async def test_validate_publisher_id_to_stream_cluster(cluster_producer: Producer) -> None:
-    LOGGER.info("Validating publisher id to stream cluster")
-    # simple test to validate the publisher id in cluster mode
-    cluster_producer._max_publishers_by_connection = 3
+# test to validate if the max_subscribers_by_connection works
+#  for each test case we test with different max_subscribers_by_connection values
+# the client should spin up a new connection when the max_subscribers_by_connection is reached
+# and close the connections when the consumer is closed
+async def test_spin_new_connection_for_consumer_stream(consumer: Consumer) -> None:
+    LOGGER.info("test_spin_new_connection_for_consumer_stream")
+    # test to validate if the consumer spin up a new connection when the max subscribers per connection is reached
     now = int(time.time())
     streams = [
-        "test_validate_publisher_id_to_stream_cluster_0_{}".format(now),
-        "test_validate_publisher_id_to_stream_cluster_1_{}".format(now),
-        "test_validate_publisher_id_to_stream_cluster_2_{}".format(now),
+        "test_spin_new_connection_for_consumer_stream_0_{}".format(now),
+        "test_spin_new_connection_for_consumer_stream_1_{}".format(now),
+        "test_spin_new_connection_for_consumer_stream_2_{}".format(now),
+        "test_spin_new_connection_for_consumer_stream_3_{}".format(now),
     ]
-    for stream in streams:
-        await cluster_producer.create_stream(stream)
 
     for stream in streams:
-        for i in range(2):
-            await cluster_producer.send_wait(stream, AMQPMessage(body=bytes("hello: {}".format(i), "utf-8")))
-    await asyncio.sleep(0.500)
+        await consumer.create_stream(stream)
 
-    assert len(cluster_producer._publishers) == 3
-    for _publisher in cluster_producer._publishers.values():
-        assert _publisher.id in [0, 1, 2]
+    async def test_with_max_subscribers_per_connection(max_subscribers_by_connection: int):
+        # validate the max subscribers by connection
+        consumer._max_subscribers_by_connection = max_subscribers_by_connection
+        conn_name = "test_spin_new_connection_for_consumer_stream_{}".format(now)
+        consumer._connection_name = conn_name
+
+        for stream in streams:
+            await consumer.subscribe(stream, lambda x, y: None)
+
+        await asyncio.sleep(0.500)
+        await wait_for(
+            lambda: count_connections_by_name(conn_name) == 4 // max_subscribers_by_connection, timeout=10
+        )
+        await consumer.close()
+        assert len(consumer._subscribers) == 0
+        assert len(consumer._clients) == 0
+        await wait_for(lambda: count_connections_by_name(conn_name) == 0, timeout=10)
+
+    await test_with_max_subscribers_per_connection(1)
+    await test_with_max_subscribers_per_connection(2)
+    await test_with_max_subscribers_per_connection(4)
+    for stream in streams:
+        await consumer.delete_stream(stream)
+
+
+# test to validate if the max_producers_by_connection works
+#  for each test case we test with different max_producers_by_connection values
+# the client should spin up a new connection when the max_producers_by_connection is reached
+# and close the producers when the consumer is closed
+async def test_spin_new_connection_for_producer_stream(producer: Producer) -> None:
+    LOGGER.info("test_spin_new_connection_for_producer_stream")
+    # test to validate if the consumer spin up a new connection when the max subscribers per connection is reached
+    now = int(time.time())
+    streams = [
+        "test_spin_new_connection_for_producer_stream_0_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_1_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_2_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_3_{}".format(now),
+    ]
 
     for stream in streams:
-        await cluster_producer.delete_stream(stream)
+        await producer.create_stream(stream)
 
-    await cluster_producer.close()
-    assert len(cluster_producer._publishers) == 0
+    async def test_with_max_producers_per_connection(max_publishers_by_connection: int):
+        # validate the max subscribers by connection
+        producer._max_publishers_by_connection = max_publishers_by_connection
+        conn_name = "test_spin_new_connection_for_producer_stream_{}".format(now)
+        producer._connection_name = conn_name
+
+        for stream in streams:
+            await producer.send_wait(stream, AMQPMessage(body=bytes("hello", "utf-8")))
+
+        await asyncio.sleep(0.500)
+        await wait_for(
+            lambda: count_connections_by_name(conn_name) == 4 // max_publishers_by_connection, timeout=10
+        )
+        await producer.close()
+        assert len(producer._publishers) == 0
+        assert len(producer._clients) == 0
+        await wait_for(lambda: count_connections_by_name(conn_name) == 0, timeout=10)
+
+    await test_with_max_producers_per_connection(1)
+    await test_with_max_producers_per_connection(2)
+    await test_with_max_producers_per_connection(4)
+    for stream in streams:
+        await producer.delete_stream(stream)
 
 
+# cluster test
+#  skip if not in github actions
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Skip cluster tests in GitHub Actions")
 async def test_spin_new_connection_for_producer_stream_cluster(
     cluster_producer: Producer, http_cluster_port: int
 ) -> None:
     LOGGER.info("Validating publisher id to stream cluster")
-    # test to validate if the producer spin up a new connection when the max publishers per connection is reached
-    cluster_producer._max_publishers_by_connection = 1
+    # simple test to validate the publisher id in cluster mode
     now = int(time.time())
-    conn_name = "test_spin_new_connection__stream_cluster_{}".format(now)
+    conn_name = "test_spin_new_connection_for_producer_stream_cluster_{}".format(now)
     cluster_producer._connection_name = conn_name
+
+    cluster_producer._max_publishers_by_connection = 1
     streams = [
-        "test_spin_new_connection__stream_cluster_0_{}".format(now),
-        "test_spin_new_connection__stream_cluster_1_{}".format(now),
-        "test_spin_new_connection__stream_cluster_2_{}".format(now),
-        "test_spin_new_connection__stream_cluster_3_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_cluster_0_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_cluster_1_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_cluster_2_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_cluster_3_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_cluster_4_{}".format(now),
+        "test_spin_new_connection_for_producer_stream_cluster_5_{}".format(now),
     ]
     for stream in streams:
         await cluster_producer.create_stream(stream)
@@ -309,19 +368,18 @@ async def test_spin_new_connection_for_producer_stream_cluster(
             await cluster_producer.send_wait(stream, AMQPMessage(body=bytes("hello: {}".format(i), "utf-8")))
     await asyncio.sleep(0.500)
 
-    assert len(cluster_producer._publishers) == 4
+    assert len(cluster_producer._publishers) == 6
     for _publisher in cluster_producer._publishers.values():
-        assert _publisher.id in [0, 1, 2, 3]
-    assert len(cluster_producer._clients) == 4
+        assert _publisher.id in [0, 1, 2, 3, 4, 5, 6]
+    assert len(cluster_producer._clients) == 6
 
-    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 3, timeout=10)
-
-    await cluster_producer.close()
-    assert len(cluster_producer._publishers) == 0
-    assert len(cluster_producer._clients) == 0
+    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 6, timeout=10)
 
     for stream in streams:
         await cluster_producer.delete_stream(stream)
+
+    await cluster_producer.close()
+    assert len(cluster_producer._publishers) == 0
 
 
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Skip cluster tests in GitHub Actions")
@@ -333,6 +391,7 @@ async def test_spin_new_connection_for_consumer_stream_cluster(
     now = int(time.time())
     conn_name = "test_spin_new_connection_for_consumer_stream_cluster_{}".format(now)
     cluster_consumer._connection_name = conn_name
+    cluster_consumer._max_subscribers_by_connection = 1
     streams = [
         "test_spin_new_connection_for_consumer_stream_cluster_0_{}".format(now),
         "test_spin_new_connection_for_consumer_stream_cluster_1_{}".format(now),
@@ -352,7 +411,7 @@ async def test_spin_new_connection_for_consumer_stream_cluster(
         assert subscriber_id in [0, 1, 2, 3]
     assert len(cluster_consumer._clients) == 4
 
-    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) > 0, timeout=10)
+    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 4, timeout=10)
 
     await cluster_consumer.close()
     assert len(cluster_consumer._subscribers) == 0
@@ -361,3 +420,53 @@ async def test_spin_new_connection_for_consumer_stream_cluster(
 
     for stream in streams:
         await cluster_consumer.delete_stream(stream)
+
+
+# test the super stream in cluster configuration
+# to see that the subscriber_name does not change
+@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Skip cluster tests in GitHub Actions")
+async def test_super_stream_cluster(
+    super_stream_cluster: str,
+    cluster_super_stream_producer: SuperStreamProducer,
+    cluster_super_stream_consumer: SuperStreamConsumer,
+    http_cluster_port: int,
+) -> None:
+
+    async def test_with_subscribe_name(p_subscriber_name: Optional[str]):
+        LOGGER.info("Validating super stream cluster")
+        messages_sent = 10
+        messages_received = 0
+        conn_name = "test_super_stream_cluster_{}".format(time.time())
+        cluster_super_stream_producer._connection_name = "p_{}".format(conn_name)
+        cluster_super_stream_consumer._connection_name = "c_{}".format(conn_name)
+        subscriber_name = p_subscriber_name
+
+        async def on_message(_msg: AMQPMessage, message_context: MessageContext):
+            nonlocal messages_received
+            messages_received += 1
+            assert message_context.subscriber_name == p_subscriber_name
+
+        await cluster_super_stream_consumer.subscribe(callback=on_message, subscriber_name=subscriber_name)
+
+        for i in range(messages_sent):
+            amqp_message = AMQPMessage(
+                body=bytes("a:{}".format(i), "utf-8"),
+                properties=Properties(message_id=str(i)),
+            )
+            await cluster_super_stream_producer.send(amqp_message)
+            await asyncio.sleep(0.1)
+
+        await wait_for(lambda: messages_received == messages_sent, timeout=10)
+
+        await cluster_super_stream_consumer.close()
+        await cluster_super_stream_producer.close()
+        #  check if the connections are closed
+        await wait_for(
+            lambda: count_connections_by_name("p_{}".format(conn_name), http_cluster_port) == 0, timeout=10
+        )
+        await wait_for(
+            lambda: count_connections_by_name("c_{}".format(conn_name), http_cluster_port) == 0, timeout=10
+        )
+
+    await test_with_subscribe_name("my_super_subscribe_name_{}".format(time.time()))
+    await test_with_subscribe_name(None)

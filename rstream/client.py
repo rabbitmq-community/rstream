@@ -109,7 +109,6 @@ class BaseClient:
         self._streams: list[str] = []
         # used to assing publish_ids and subscribe_ids
         self._available_client_ids: AtomicInteger = AtomicInteger(0)
-        self._current_id = 0
 
     def start_task(self, name: str, coro: Awaitable[None]) -> None:
         assert name not in self._tasks
@@ -167,7 +166,7 @@ class BaseClient:
         return self._available_client_ids.inc()
 
     async def get_count_available_ids(self):
-        return self._available_client_ids.value
+        return self._max_clients_by_connections - self._available_client_ids.value
 
     async def free_available_id(self):
         self._available_client_ids.dec()
