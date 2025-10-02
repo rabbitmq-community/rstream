@@ -3,6 +3,7 @@
 
 import asyncio
 import itertools
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Generator, Optional
 
@@ -69,3 +70,27 @@ class FilterConfiguration:
 
     def match_unfiltered(self) -> bool:
         return self._match_unfiltered
+
+
+class AtomicInteger:
+    def __init__(self, value=0):
+        self._value = int(value)
+        self._lock = threading.Lock()
+
+    def inc(self, d=1):
+        with self._lock:
+            self._value += int(d)
+            return self._value
+
+    def dec(self, d=1):
+        return self.inc(-d)
+
+    @property
+    def value(self):
+        with self._lock:
+            return self._value
+
+    def swap_value(self, v):
+        with self._lock:
+            self._value = int(v)
+            return self._value

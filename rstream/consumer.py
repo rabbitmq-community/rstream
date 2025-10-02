@@ -19,7 +19,7 @@ from typing import (
     Union,
 )
 
-from . import exceptions, schema
+from . import exceptions, schema, utils
 from .amqp import AMQPMessage
 from .client import Addr, Client, ClientPool
 from .constants import (
@@ -31,6 +31,7 @@ from .constants import (
     OffsetType,
     SlasMechanism,
 )
+from .exceptions import StreamAlreadySubscribed
 from .schema import OffsetSpecification
 from .utils import FilterConfiguration, OnClosedErrorInfo
 
@@ -115,6 +116,7 @@ class Consumer:
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}
         self._subscribers: dict[int, _Subscriber] = {}
+        self._last_subscriber_id = utils.AtomicInteger(-1)
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self._on_close_handler = on_close_handler
@@ -205,11 +207,18 @@ class Consumer:
     ) -> _Subscriber:
         logger.debug("_create_subscriber(): Create subscriber")
         #  need to check if the current subscribers for this stream reached the max limit
+        # We can have multiple subscribers sharing same connection, so their ids must be distinct
+
+        # select to see if there is already a stream for this instance
+
+        for value in self._subscribers.values():
+            if value.stream == stream:
+                raise StreamAlreadySubscribed("Stream  {} already subscribed".format(stream))
 
         client = await self._get_or_create_client(stream)
         await client.inc_available_id()
-        # We can have multiple subscribers sharing same connection, so their ids must be distinct
         subscription_id = await self.get_available_id()
+
         decoder = decoder or (lambda x: x)
         # the ID is unique per connection
         subscriber = self._subscribers[subscription_id] = _Subscriber(
@@ -320,20 +329,22 @@ class Consumer:
         return subscriber.subscription_id
 
     async def get_available_id(self) -> int:
-        # ok = True
-        # for _client in self._clients.keys():
-        #     ok = ok and  await self._clients[_client].get_count_available_ids()> 0
-        #
-        # if not ok:
-        #     raise exceptions.MaxConsumersPerConnectionReached("Max consumers per connection reached")
 
-        for subscribing_id in range(0, self._max_subscribers_by_connection):
+        # as first loop we always go ahead with the ID to avoid race condition
+        # during the reassign of the ID. We have seen it in some edge cases with the
+        # other clients
+        if self._last_subscriber_id.value < MAX_ITEM_ALLOWED - 1:
+            return self._last_subscriber_id.inc()
+
+        # if the last id is greater than MAX_ITEM_ALLOWED
+        # we need to loop through all the IDs to find an available one
+        for subscribing_id in range(0, MAX_ITEM_ALLOWED - 1):
             if subscribing_id not in self._subscribers:
-                return subscribing_id
+                return self._last_subscriber_id.swap_value(subscribing_id)
 
-        # TODO: Next PR refactor the id count to client pool
-        # remove comment the above code
-        raise exceptions.MaxConsumersPerConnectionReached("Max consumers per connection reached")
+        # if we reach this point it means we have reached the max limit of subscribers
+        # each subscriber has a unique ID and can't be > MAX_ITEM_ALLOWED
+        raise exceptions.MaxConsumersPerInstance("Max consumers per connection reached")
 
     async def unsubscribe(self, subscriber_id: int) -> None:
         logger.debug("unsubscribe(): UnSubscribing and removing handlers")
@@ -342,11 +353,11 @@ class Consumer:
         await subscriber.client.stop_queue_listener_task(subscriber_id=subscriber_id)
         subscriber.client.remove_handler(
             schema.Deliver,
-            name=subscriber.reference,
+            name=str(subscriber.subscription_id),
         )
         subscriber.client.remove_handler(
             schema.MetadataUpdate,
-            name=subscriber.reference,
+            name=str(subscriber.subscription_id),
         )
         try:
             await asyncio.wait_for(subscriber.client.unsubscribe(subscriber.subscription_id), 5)
@@ -359,7 +370,8 @@ class Consumer:
 
         if stream in self._clients:
             await self._clients[stream].remove_stream(stream)
-            await self._clients[stream].free_available_id(subscriber.subscription_id)
+            await self._clients[stream].free_available_id()
+            del self._clients[stream]
 
         del self._subscribers[subscriber_id]
 
@@ -528,7 +540,7 @@ class Consumer:
 
         if stream in self._clients:
             if curr_subscriber is not None:
-                await self._clients[stream].free_available_id(curr_subscriber.subscription_id)
+                await self._clients[stream].free_available_id()
             await self._clients[stream].close()
             del self._clients[stream]
 
@@ -590,7 +602,7 @@ class Consumer:
         if stream in self._clients:
             await self._clients[stream].remove_stream(stream)
             if curr_subscriber is not None:
-                await self._clients[stream].free_available_id(curr_subscriber.subscription_id)
+                await self._clients[stream].free_available_id()
             if await self._clients[stream].get_stream_count() == 0:
                 await self._clients[stream].close()
             del self._clients[stream]

@@ -249,12 +249,14 @@ async def test_consumer_resubscribe_when_not_consumed_events_in_queue(
         await producer.close()
 
 
-async def test_offset_type_timestamp(stream: str, consumer: Consumer, producer: Producer) -> None:
+async def test_offset_type_timestamp(consumer: Consumer, producer: Producer) -> None:
+    stream = "test_offset_type_timestamp_{}".format(time.time())
+    await producer.create_stream(stream=stream)
     messages = [str(i).encode() for i in range(1, 5_000)]
     await producer.send_batch(stream, messages)
 
     # mark time in between message batches
-    await asyncio.sleep(1)
+    await asyncio.sleep(1.5)
     now = int(time.time() * 1000)
 
     messages = [str(i).encode() for i in range(5_000, 5_100)]
@@ -267,7 +269,9 @@ async def test_offset_type_timestamp(stream: str, consumer: Consumer, producer: 
         callback=lambda message, message_context: captured.append(bytes(message)),
         offset_specification=ConsumerOffsetSpecification(offset_type=OffsetType.TIMESTAMP, offset=now),
     )
+    await asyncio.sleep(1)
     await wait_for(lambda: len(captured) > 0 and captured[0] >= b"5000", 5)
+    await producer.delete_stream(stream)
 
 
 async def test_offset_type_next(stream: str, consumer: Consumer, producer: Producer) -> None:
@@ -288,14 +292,14 @@ async def test_offset_type_next(stream: str, consumer: Consumer, producer: Produ
 
 async def test_consume_with_resubscribe(stream: str, consumer: Consumer, producer: Producer) -> None:
     captured_by_first_consumer: list[bytes] = []
-    subscriber_name = await consumer.subscribe(
+    subscriber_id = await consumer.subscribe(
         stream, callback=lambda message, message_context: captured_by_first_consumer.append(bytes(message))
     )
     await producer.send_wait(stream, b"one")
     await wait_for(lambda: len(captured_by_first_consumer) >= 1)
     assert captured_by_first_consumer == [b"one"]
 
-    await consumer.unsubscribe(subscriber_name)
+    await consumer.unsubscribe(subscriber_id)
 
     captured_by_second_consumer: list[bytes] = []
     await consumer.subscribe(

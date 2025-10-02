@@ -15,3 +15,5 @@ __pycache__/
 local*
 .githooks/
 .venv/
+.DS_Store
+local_ex
