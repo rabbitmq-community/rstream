@@ -456,15 +456,17 @@ class Consumer:
             if result is not None and inspect.isawaitable(result):
                 await result
 
-    async def _on_close_connection(self, on_closed_info: Optional[OnClosedErrorInfo]  ) -> None:
+    async def _on_close_connection(self, on_closed_info: OnClosedErrorInfo) -> None:
         # clone on_closed_info to avoid modification during iteration
         new_on_closed_info = OnClosedErrorInfo(
-            reason=on_closed_info.reason, streams=list(on_closed_info.streams) if on_closed_info.streams else []
+            reason=on_closed_info.reason,
+            streams=list(on_closed_info.streams) if on_closed_info.streams else [],
         )
         if on_closed_info.streams is not None:
             for stream in on_closed_info.streams:
                 await self._maybe_clean_up_during_lost_connection(stream)
-            await self._on_close_handler(new_on_closed_info)
+            if self._on_close_handler is not None:
+                self._on_close_handler(new_on_closed_info)
 
     async def _on_consumer_update_query_response(
         self,
