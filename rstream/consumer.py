@@ -141,7 +141,7 @@ class Consumer:
 
     async def start(self) -> None:
         self._default_client = await self._pool.get(
-            connection_closed_handler=self._on_close_handler,
+            connection_closed_handler=self._on_close_connection,
             connection_name=self._connection_name,
             sasl_configuration_mechanism=self._sasl_configuration_mechanism,
             max_clients_by_connections=self._max_subscribers_by_connection,
@@ -254,7 +254,7 @@ class Consumer:
             offset_specification = ConsumerOffsetSpecification(OffsetType.FIRST, None)
 
         async with self._lock:
-            logger.debug("subscribe(): Create subscriber")
+            logger.debug("[subscribe] Create subscriber for stream: {}".format(stream))
             subscriber = await self._create_subscriber(
                 stream=stream,
                 subscriber_name=subscriber_name,
@@ -270,7 +270,7 @@ class Consumer:
                 handler=partial(self._on_deliver, subscriber=subscriber, filter_value=filter_input),
             )
 
-        logger.debug("subscribe(): Adding handlers")
+        logger.debug("[subscribe] Adding handlers for stream: {}".format(stream))
         subscriber.client.add_handler(
             schema.Deliver,
             partial(self._on_deliver, subscriber=subscriber, filter_value=filter_input),
@@ -299,7 +299,7 @@ class Consumer:
                 )
 
         if filter_input is not None:
-            logger.debug("subscribe(): Filtering scenario enabled")
+            logger.debug("[subscribe] Filtering scenario enabled for stream: {}".format(stream))
             await self._check_if_filtering_is_supported()
             values_to_filter = filter_input.values()
             if len(values_to_filter) <= 0:
@@ -315,7 +315,7 @@ class Consumer:
             else:
                 properties[SUBSCRIPTION_PROPERTY_MATCH_UNFILTERED] = "false"
 
-        logger.debug("subscribe(): Subscribing")
+        logger.debug("[subscribe] subscribing to stream: {}".format(stream))
         await subscriber.client.subscribe(
             stream=stream,
             subscription_id=subscriber.subscription_id,
@@ -325,7 +325,7 @@ class Consumer:
             initial_credit=initial_credit,
             properties=properties,
         )
-
+        logger.debug("[subscribe] created for: {}, id: {}".format(stream, subscriber.subscription_id))
         return subscriber.subscription_id
 
     async def get_available_id(self) -> int:
@@ -456,6 +456,16 @@ class Consumer:
             if result is not None and inspect.isawaitable(result):
                 await result
 
+    async def _on_close_connection(self, on_closed_info: Optional[OnClosedErrorInfo]  ) -> None:
+        # clone on_closed_info to avoid modification during iteration
+        new_on_closed_info = OnClosedErrorInfo(
+            reason=on_closed_info.reason, streams=list(on_closed_info.streams) if on_closed_info.streams else []
+        )
+        if on_closed_info.streams is not None:
+            for stream in on_closed_info.streams:
+                await self._maybe_clean_up_during_lost_connection(stream)
+            await self._on_close_handler(new_on_closed_info)
+
     async def _on_consumer_update_query_response(
         self,
         frame: schema.ConsumerUpdateResponse,
@@ -528,7 +538,7 @@ class Consumer:
         return stream_exists
 
     async def reconnect_stream(self, stream: str, offset: Optional[int] = None) -> None:
-        logging.debug("reconnect_stream")
+        logging.debug("[reconnect stream] init for stream: {}".format(stream))
         curr_subscriber = None
         curr_subscriber_id = None
         for subscriber_id in self._subscribers:
@@ -553,19 +563,24 @@ class Consumer:
             if curr_subscriber is not None:
                 offset = curr_subscriber.offset
 
-        logging.debug("reconnect_stream(): Subscribing again")
+        logging.debug(
+            "[reconnect stream] offset for stream {}: {}, curr_subscriber: {}".format(
+                stream, offset, curr_subscriber
+            )
+        )
         offset_specification = ConsumerOffsetSpecification(OffsetType.OFFSET, offset)
         if curr_subscriber is not None:
-            asyncio.create_task(
+            await asyncio.create_task(
                 self.subscribe(
                     stream=curr_subscriber.stream,
-                    # subscriber_name=curr_subscriber.reference,
+                    subscriber_name=curr_subscriber.reference,
                     callback=curr_subscriber.callback,
                     decoder=curr_subscriber.decoder,
                     offset_specification=offset_specification,
                     filter_input=curr_subscriber.filter_input,
                 )
             )
+        logging.debug("[reconnect stream] completed for stream: {}".format(stream))
 
     async def _check_if_filtering_is_supported(self) -> None:
         command_version_input = schema.FrameHandlerInfo(Key.Publish.value, min_version=1, max_version=2)
@@ -592,12 +607,13 @@ class Consumer:
             await (await self.default_client).close()
             self._default_client = None
 
-    async def _maybe_clean_up_during_lost_connection(self, stream: str):
+    async def _maybe_clean_up_during_lost_connection(self, stream: str) -> Optional[int]:
         curr_subscriber = None
-
+        offset = None
         for subscriber_id in self._subscribers:
             if stream == self._subscribers[subscriber_id].stream:
                 curr_subscriber = self._subscribers[subscriber_id]
+                offset = curr_subscriber.offset
 
         if stream in self._clients:
             await self._clients[stream].remove_stream(stream)
@@ -606,3 +622,5 @@ class Consumer:
             if await self._clients[stream].get_stream_count() == 0:
                 await self._clients[stream].close()
             del self._clients[stream]
+
+        return offset
