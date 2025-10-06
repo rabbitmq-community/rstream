@@ -37,7 +37,7 @@ from .utils import FilterConfiguration, OnClosedErrorInfo
 
 MT = TypeVar("MT")
 CB = Annotated[Callable[[MT, Any], Union[None, Awaitable[None]]], "Message callback type"]
-CB_CONN = Annotated[Callable[[MT], Union[None, Awaitable[None]]], "Message callback type"]
+CB_CONN = Annotated[Callable[[MT], Union[None, Awaitable[Any]]], "Message callback type"]
 logger = logging.getLogger(__name__)
 
 
@@ -466,7 +466,9 @@ class Consumer:
             for stream in on_closed_info.streams:
                 await self._maybe_clean_up_during_lost_connection(stream)
             if self._on_close_handler is not None:
-                self._on_close_handler(new_on_closed_info)
+                result = self._on_close_handler(new_on_closed_info)
+                if result is not None and inspect.isawaitable(result):
+                    await result
 
     async def _on_consumer_update_query_response(
         self,
