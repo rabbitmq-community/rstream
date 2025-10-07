@@ -1,5 +1,6 @@
 import logging
 import ssl
+import time
 
 import pytest_asyncio
 
@@ -88,17 +89,18 @@ async def client(no_auth_client: Client, pytestconfig):
 
 @pytest_asyncio.fixture()
 async def stream(client: Client):
+    test_name = "test-stream_{}".format(time.time())
     try:
-        await client.delete_stream("test-stream")
+        await client.delete_stream(test_name)
     except Exception:
         # it doesn't matter if it fails
         pass
 
-    await client.create_stream("test-stream")
+    await client.create_stream(test_name)
     try:
-        yield "test-stream"
+        yield test_name
     finally:
-        await client.delete_stream("test-stream")
+        await client.delete_stream(test_name)
 
 
 @pytest_asyncio.fixture()

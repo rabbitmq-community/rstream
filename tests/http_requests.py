@@ -19,7 +19,7 @@ def get_connection(name: str) -> bool:
     return True
 
 
-def get_connection_present(connection_name: str, connections: list) -> bool:
+def connection_exists(connection_name: str, connections: list) -> bool:
     for connection in connections:
         if connection["client_properties"]["connection_name"] == connection_name:
             return True

@@ -32,6 +32,7 @@ from .constants import (
     SlasMechanism,
 )
 from .exceptions import StreamAlreadySubscribed
+from .recovery import BackOffRecoveryStrategy, IReliableEntity, RecoveryStrategy
 from .schema import OffsetSpecification
 from .utils import FilterConfiguration, OnClosedErrorInfo
 
@@ -63,9 +64,9 @@ class EventContext:
 @dataclass
 class _Subscriber:
     stream: str
+    client: Client
     subscription_id: int
     reference: Optional[str]
-    client: Client
     callback: Callable[[AMQPMessage, MessageContext], Union[None, Awaitable[None]]]
     decoder: Callable[[bytes], Any]
     offset_type: OffsetType
@@ -73,16 +74,16 @@ class _Subscriber:
     filter_input: Optional[FilterConfiguration]
 
 
-class Consumer:
+class Consumer(IReliableEntity):
     def __init__(
         self,
         host: str,
         port: int = 5552,
         *,
-        ssl_context: Optional[ssl.SSLContext] = None,
-        vhost: str = "/",
         username: str,
         password: str,
+        ssl_context: Optional[ssl.SSLContext] = None,
+        vhost: str = "/",
         frame_max: int = 1 * 1024 * 1024,
         heartbeat: int = 60,
         load_balancer_mode: bool = False,
@@ -91,7 +92,9 @@ class Consumer:
         on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
         connection_name: str = "",
         sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
+        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(),
     ):
+        super().__init__()
         self._pool = ClientPool(
             host,
             port,
@@ -113,6 +116,7 @@ class Consumer:
         if max_subscribers_by_connection > MAX_ITEM_ALLOWED:
             raise ValueError(f"max_subscribers_by_connection must be less than {MAX_ITEM_ALLOWED}")
 
+        self._recovery_strategy = recovery_strategy
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}
         self._subscribers: dict[int, _Subscriber] = {}
@@ -128,7 +132,7 @@ class Consumer:
 
     @property
     async def default_client(self) -> Client:
-        if self._default_client is None:
+        if self._default_client is None or not self._default_client.is_connection_alive():
             self._default_client = await self._create_locator_connection()
         return self._default_client
 
@@ -175,7 +179,7 @@ class Consumer:
             if self._default_client is None:
                 logger.debug("_get_or_create_client(): Creating locator connection")
                 self._default_client = await self._pool.get(
-                    connection_closed_handler=self._on_close_handler,
+                    connection_closed_handler=self._on_close_connection,
                     connection_name=self._connection_name,
                     max_clients_by_connections=self._max_subscribers_by_connection,
                 )
@@ -369,9 +373,7 @@ class Consumer:
         stream = subscriber.stream
 
         if stream in self._clients:
-            await self._clients[stream].remove_stream(stream)
-            await self._clients[stream].free_available_id()
-            del self._clients[stream]
+            await self._remove_stream_from_client(stream)
 
         del self._subscribers[subscriber_id]
 
@@ -462,13 +464,38 @@ class Consumer:
             reason=on_closed_info.reason,
             streams=list(on_closed_info.streams) if on_closed_info.streams else [],
         )
+
+        if self._on_close_handler is not None:
+            result = self._on_close_handler(new_on_closed_info)
+            if result is not None and inspect.isawaitable(result):
+                await result
+
         if on_closed_info.streams is not None:
-            for stream in on_closed_info.streams:
-                await self._maybe_clean_up_during_lost_connection(stream)
-            if self._on_close_handler is not None:
-                result = self._on_close_handler(new_on_closed_info)
-                if result is not None and inspect.isawaitable(result):
-                    await result
+            cloned_stream = on_closed_info.streams.copy()
+            for stream in cloned_stream:
+                for subscriber_id in self._subscribers.copy():
+                    if stream == self._subscribers[subscriber_id].stream:
+                        curr_subscriber = self._subscribers[subscriber_id]
+                        del self._subscribers[subscriber_id]
+                        await self._remove_stream_from_client(stream)
+                        result = self._recovery_strategy.recover(
+                            self,
+                            curr_subscriber.stream,
+                            error=Exception(on_closed_info.reason),
+                            attempt=1,
+                            recovery_fun=lambda: self.subscribe(
+                                stream=curr_subscriber.stream,
+                                subscriber_name=curr_subscriber.reference,
+                                callback=curr_subscriber.callback,
+                                decoder=curr_subscriber.decoder,
+                                offset_specification=ConsumerOffsetSpecification(
+                                    OffsetType.OFFSET, curr_subscriber.offset
+                                ),
+                                filter_input=curr_subscriber.filter_input,
+                            ),
+                        )
+                        if result is not None and inspect.isawaitable(result):
+                            await result
 
     async def _on_consumer_update_query_response(
         self,
@@ -611,8 +638,15 @@ class Consumer:
             await (await self.default_client).close()
             self._default_client = None
 
+    async def _remove_stream_from_client(self, stream: str) -> None:
+        if stream in self._clients:
+            await self._clients[stream].remove_stream(stream)
+            await self._clients[stream].free_available_id()
+            if await self._clients[stream].get_stream_count() == 0:
+                await self._clients[stream].close()
+            del self._clients[stream]
+
     async def _maybe_clean_up_during_lost_connection(self, stream: str) -> Optional[int]:
-        curr_subscriber = None
         offset = None
         for subscriber_id in self._subscribers:
             if stream == self._subscribers[subscriber_id].stream:
@@ -620,11 +654,6 @@ class Consumer:
                 offset = curr_subscriber.offset
 
         if stream in self._clients:
-            await self._clients[stream].remove_stream(stream)
-            if curr_subscriber is not None:
-                await self._clients[stream].free_available_id()
-            if await self._clients[stream].get_stream_count() == 0:
-                await self._clients[stream].close()
-            del self._clients[stream]
+            await self._remove_stream_from_client(stream)
 
         return offset

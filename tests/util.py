@@ -20,9 +20,9 @@ from rstream import (
 )
 
 from .http_requests import (
+    connection_exists,
     delete_connection,
     get_connection,
-    get_connection_present,
     get_connections,
 )
 
@@ -114,11 +114,11 @@ async def run_consumer(
 
 async def task_to_delete_connection(connection_name: str) -> None:
     # delay a few seconds before deleting the connection
-    await asyncio.sleep(5)
+    await asyncio.sleep(2)
 
     connections = get_connections()
 
-    await wait_for(lambda: get_connection_present(connection_name, connections) is True)
+    await wait_for(lambda: connection_exists(connection_name, connections) is True)
 
     for connection in connections:
         if connection["client_properties"]["connection_name"] == connection_name:

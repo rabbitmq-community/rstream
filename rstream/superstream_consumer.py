@@ -27,6 +27,7 @@ from .constants import (
     OffsetType,
 )
 from .consumer import Consumer, EventContext, MessageContext
+from .recovery import BackOffRecoveryStrategy, RecoveryStrategy
 from .superstream import (
     DefaultSuperstreamMetadata,
     SuperStreamCreationOption,
@@ -58,6 +59,7 @@ class SuperStreamConsumer:
         super_stream_creation_option: Optional[SuperStreamCreationOption] = None,
         connection_name: str = "",
         on_close_handler: Optional[CB[OnClosedErrorInfo]] = None,
+        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(),
     ):
         self._pool = ClientPool(
             host,
@@ -90,6 +92,7 @@ class SuperStreamConsumer:
         self._subscribers: dict[str, int] = defaultdict(int)
         self._on_close_handler = on_close_handler
         self._connection_name = connection_name
+        self._recovery_strategy = recovery_strategy
         if self._connection_name is None or self._connection_name == "":
             self._connection_name = "rstream-consumer"
 
@@ -216,6 +219,7 @@ class SuperStreamConsumer:
             on_close_handler=self._on_close_handler,
             connection_name=self._connection_name,
             max_subscribers_by_connection=self._max_subscribers_by_connection,
+            recovery_strategy=self._recovery_strategy,
         )
 
         await consumer.start()
