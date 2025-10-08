@@ -114,13 +114,12 @@ async def run_consumer(
 
 async def http_api_delete_connection_and_check(connection_name: str) -> None:
     # delay a few seconds before deleting the connection
-    await asyncio.sleep(2)
 
-    connections = http_api_get_connections()
+    await wait_for(
+        lambda: http_api_connection_exists(connection_name, http_api_get_connections()) is True, 5, 1
+    )
 
-    await wait_for(lambda: http_api_connection_exists(connection_name, connections) is True, 5, 1)
-
-    for connection in connections:
+    for connection in http_api_get_connections():
         if connection["client_properties"]["connection_name"] == connection_name:
             http_api_delete_connection(connection["name"])
             await wait_for(lambda: http_api_get_connection(connection["name"]) is False, 5)

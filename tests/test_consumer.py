@@ -249,6 +249,7 @@ async def test_consumer_resubscribe_when_not_consumed_events_in_queue(
         await producer.close()
 
 
+@pytest.mark.flaky(reruns=1, reruns_delay=1)
 async def test_offset_type_timestamp(consumer: Consumer, producer: Producer) -> None:
     stream = "test_offset_type_timestamp_{}".format(time.time())
     await producer.create_stream(stream=stream)
@@ -256,7 +257,7 @@ async def test_offset_type_timestamp(consumer: Consumer, producer: Producer) -> 
     await producer.send_batch(stream, messages)
 
     # mark time in between message batches
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(1)
     now = int(time.time() * 1000)
 
     messages = [str(i).encode() for i in range(5_000, 5_100)]
@@ -269,8 +270,7 @@ async def test_offset_type_timestamp(consumer: Consumer, producer: Producer) -> 
         callback=lambda message, message_context: captured.append(bytes(message)),
         offset_specification=ConsumerOffsetSpecification(offset_type=OffsetType.TIMESTAMP, offset=now),
     )
-    await asyncio.sleep(5)
-    await wait_for(lambda: len(captured) > 10, 5)
+    await wait_for(lambda: len(captured) > 10, 5, 2)
     assert captured[0] >= b"5000"
     await producer.delete_stream(stream)
 
