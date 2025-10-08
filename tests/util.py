@@ -30,12 +30,12 @@ captured: list[bytes] = []
 logger = logging.getLogger(__name__)
 
 
-async def wait_for(condition, timeout=1):
-    await asyncio.sleep(0.5)
+async def wait_for(condition, timeout=1, interval=0.5):
+    await asyncio.sleep(interval)
 
     async def _wait():
         while not condition():
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(interval)
 
     await asyncio.wait_for(_wait(), timeout)
 
@@ -118,7 +118,7 @@ async def http_api_delete_connection_and_check(connection_name: str) -> None:
 
     connections = http_api_get_connections()
 
-    await wait_for(lambda: http_api_connection_exists(connection_name, connections) is True, 5)
+    await wait_for(lambda: http_api_connection_exists(connection_name, connections) is True, 5, 1)
 
     for connection in connections:
         if connection["client_properties"]["connection_name"] == connection_name:

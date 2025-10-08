@@ -48,6 +48,6 @@ jobs:
         run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704
       - name: mypy
         run: |
-          poetry run mypy .
+          poetry run mypy . -v
       - name: poetry run pytest
         run: poetry run pytest

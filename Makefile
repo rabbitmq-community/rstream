@@ -23,6 +23,6 @@ rabbitmq-ha-proxy:
 	cd compose/ha_tls; docker compose up
 
 test: format
-	poetry run pytest .
+	poetry run pytest . -s -v
 help:
 	cat Makefile
