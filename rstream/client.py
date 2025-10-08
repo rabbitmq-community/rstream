@@ -23,6 +23,8 @@ from typing import (
     Union,
 )
 
+from rstream.schema import Broker
+
 from . import (
     __license__,
     __version__,
@@ -509,7 +511,7 @@ class Client(BaseClient):
     async def query_leader_and_replicas(
         self,
         stream: str,
-    ) -> tuple[schema.Broker, list[schema.Broker]]:
+    ) -> tuple[Broker, list[Broker]]:
         while True:
             metadata_resp = await self.sync_request(
                 schema.Metadata(

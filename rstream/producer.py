@@ -199,10 +199,12 @@ class Producer:
         self._default_client = None
 
     async def _get_or_create_client(self, stream: str) -> Client:
-        logger.debug("_get_or_create_client()")
+        logger.debug("[get_or_create_client] for stream: {}".format(stream))
         if stream not in self._clients:
             if self._default_client is None or self._default_client.is_connection_alive() is False:
-                logger.debug("_get_or_create_client(): Creating locator connection")
+                logger.debug(
+                    "[get_or_create_client] Creating locator connection for stream: {}".format(stream)
+                )
                 self._default_client = await self._pool.get(
                     connection_closed_handler=self._on_connection_closed,
                     connection_name=self._connection_name,
@@ -210,7 +212,9 @@ class Producer:
                 )
             leader, _ = await (await self.default_client).query_leader_and_replicas(stream)
 
-            logger.debug("_get_or_create_client(): Getting/Creating new connection")
+            logger.debug(
+                "[get_or_create_client] Getting/Creating new connection for stream: {}".format(stream)
+            )
             self._clients[stream] = await self._pool.get(
                 connection_name=self._connection_name,
                 addr=Addr(leader.host, leader.port),

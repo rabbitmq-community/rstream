@@ -20,10 +20,10 @@ from rstream import (
 )
 
 from .http_requests import (
-    connection_exists,
-    delete_connection,
-    get_connection,
-    get_connections,
+    http_api_connection_exists,
+    http_api_delete_connection,
+    http_api_get_connection,
+    http_api_get_connections,
 )
 
 captured: list[bytes] = []
@@ -112,28 +112,28 @@ async def run_consumer(
     )
 
 
-async def task_to_delete_connection(connection_name: str) -> None:
+async def http_api_delete_connection_and_check(connection_name: str) -> None:
     # delay a few seconds before deleting the connection
     await asyncio.sleep(2)
 
-    connections = get_connections()
+    connections = http_api_get_connections()
 
-    await wait_for(lambda: connection_exists(connection_name, connections) is True)
+    await wait_for(lambda: http_api_connection_exists(connection_name, connections) is True, 5)
 
     for connection in connections:
         if connection["client_properties"]["connection_name"] == connection_name:
-            delete_connection(connection["name"])
-            await wait_for(lambda: get_connection(connection["name"]) is False, 5)
+            http_api_delete_connection(connection["name"])
+            await wait_for(lambda: http_api_get_connection(connection["name"]) is False, 5)
 
 
-async def task_to_delete_stream_producer(producer: Producer, stream: str) -> None:
+async def delete_stream_from_producer(producer: Producer, stream: str) -> None:
     # delay a few seconds before deleting the connection
     await asyncio.sleep(4)
 
     await producer.delete_stream(stream)
 
 
-async def task_to_delete_stream_consumer(consumer: Consumer, stream: str) -> None:
+async def delete_stream_from_consumer(consumer: Consumer, stream: str) -> None:
     # delay a few seconds before deleting the connection
     await asyncio.sleep(4)
 

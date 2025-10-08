@@ -470,32 +470,29 @@ class Consumer(IReliableEntity):
             if result is not None and inspect.isawaitable(result):
                 await result
 
-        if on_closed_info.streams is not None:
-            cloned_stream = on_closed_info.streams.copy()
-            for stream in cloned_stream:
-                for subscriber_id in self._subscribers.copy():
-                    if stream == self._subscribers[subscriber_id].stream:
-                        curr_subscriber = self._subscribers[subscriber_id]
-                        del self._subscribers[subscriber_id]
-                        await self._remove_stream_from_client(stream)
-                        result = self._recovery_strategy.recover(
-                            self,
-                            curr_subscriber.stream,
-                            error=Exception(on_closed_info.reason),
-                            attempt=1,
-                            recovery_fun=lambda: self.subscribe(
-                                stream=curr_subscriber.stream,
-                                subscriber_name=curr_subscriber.reference,
-                                callback=curr_subscriber.callback,
-                                decoder=curr_subscriber.decoder,
-                                offset_specification=ConsumerOffsetSpecification(
-                                    OffsetType.OFFSET, curr_subscriber.offset
-                                ),
-                                filter_input=curr_subscriber.filter_input,
-                            ),
-                        )
-                        if result is not None and inspect.isawaitable(result):
-                            await result
+        for stream in on_closed_info.streams.copy():
+            current_subscriber = await self._get_subscriber_by_stream(stream)
+            if current_subscriber is not None:
+                del self._subscribers[current_subscriber.subscription_id]
+                await self._remove_stream_from_client(stream)
+                result = self._recovery_strategy.recover(
+                    self,
+                    current_subscriber.stream,
+                    error=Exception(on_closed_info.reason),
+                    attempt=1,
+                    recovery_fun=lambda: self.subscribe(
+                        stream=current_subscriber.stream,
+                        subscriber_name=current_subscriber.reference,
+                        callback=current_subscriber.callback,
+                        decoder=current_subscriber.decoder,
+                        offset_specification=ConsumerOffsetSpecification(
+                            OffsetType.OFFSET, current_subscriber.offset
+                        ),
+                        filter_input=current_subscriber.filter_input,
+                    ),
+                )
+                if result is not None and inspect.isawaitable(result):
+                    await result
 
     async def _on_consumer_update_query_response(
         self,
@@ -568,51 +565,6 @@ class Consumer(IReliableEntity):
 
         return stream_exists
 
-    async def reconnect_stream(self, stream: str, offset: Optional[int] = None) -> None:
-        logging.debug("[reconnect stream] init for stream: {}".format(stream))
-        curr_subscriber = None
-        curr_subscriber_id = None
-        for subscriber_id in self._subscribers:
-            if stream == self._subscribers[subscriber_id].stream:
-                curr_subscriber = self._subscribers[subscriber_id]
-                curr_subscriber_id = subscriber_id
-        if curr_subscriber_id is not None:
-            del self._subscribers[curr_subscriber_id]
-
-        if stream in self._clients:
-            if curr_subscriber is not None:
-                await self._clients[stream].free_available_id()
-            await self._clients[stream].close()
-            del self._clients[stream]
-
-        if self._default_client is not None:
-            if not self._default_client.is_connection_alive():
-                await self._default_client.close()
-                self._default_client = None
-
-        if offset is None:
-            if curr_subscriber is not None:
-                offset = curr_subscriber.offset
-
-        logging.debug(
-            "[reconnect stream] offset for stream {}: {}, curr_subscriber: {}".format(
-                stream, offset, curr_subscriber
-            )
-        )
-        offset_specification = ConsumerOffsetSpecification(OffsetType.OFFSET, offset)
-        if curr_subscriber is not None:
-            await asyncio.create_task(
-                self.subscribe(
-                    stream=curr_subscriber.stream,
-                    subscriber_name=curr_subscriber.reference,
-                    callback=curr_subscriber.callback,
-                    decoder=curr_subscriber.decoder,
-                    offset_specification=offset_specification,
-                    filter_input=curr_subscriber.filter_input,
-                )
-            )
-        logging.debug("[reconnect stream] completed for stream: {}".format(stream))
-
     async def _check_if_filtering_is_supported(self) -> None:
         command_version_input = schema.FrameHandlerInfo(Key.Publish.value, min_version=1, max_version=2)
         server_command_version: schema.FrameHandlerInfo = await (
@@ -646,12 +598,17 @@ class Consumer(IReliableEntity):
                 await self._clients[stream].close()
             del self._clients[stream]
 
+    async def _get_subscriber_by_stream(self, stream: str) -> Optional[_Subscriber]:
+        for subscriber in self._subscribers.values():
+            if stream == subscriber.stream:
+                return subscriber
+        return None
+
     async def _maybe_clean_up_during_lost_connection(self, stream: str) -> Optional[int]:
         offset = None
-        for subscriber_id in self._subscribers:
-            if stream == self._subscribers[subscriber_id].stream:
-                curr_subscriber = self._subscribers[subscriber_id]
-                offset = curr_subscriber.offset
+        curr_subscriber = await self._get_subscriber_by_stream(stream)
+        if curr_subscriber is not None:
+            offset = curr_subscriber.offset
 
         if stream in self._clients:
             await self._remove_stream_from_client(stream)

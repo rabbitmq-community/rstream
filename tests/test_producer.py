@@ -21,10 +21,10 @@ from rstream import (
 )
 
 from .util import (
+    http_api_delete_connection_and_check,
     on_publish_confirm_client_callback,
     on_publish_confirm_client_callback2,
     routing_extractor_generic,
-    task_to_delete_connection,
     wait_for,
 )
 
@@ -517,7 +517,7 @@ async def test_producer_connection_broke(stream: str, consumer: Consumer) -> Non
     )
 
     await producer_broke.start()
-    asyncio.create_task(task_to_delete_connection("test-connection"))
+    await http_api_delete_connection_and_check("test-connection")
 
     count = 0
     while True:
@@ -562,7 +562,6 @@ async def test_super_stream_producer_connection_broke(super_stream: str, consume
 
     await super_stream_producer_broke.start()
 
-    asyncio.create_task(task_to_delete_connection("test-connection"))
     count = 0
     while True:
         amqp_message = AMQPMessage(
@@ -575,9 +574,11 @@ async def test_super_stream_producer_connection_broke(super_stream: str, consume
         count = count + 1
         if count % 100 == 0:
             await asyncio.sleep(0.2)
-        if count > 10000:
+        if count == 500:
+            await http_api_delete_connection_and_check("test-connection")
+        if count >= 10000:
             break
 
     await super_stream_producer_broke.close()
 
-    assert len(captured_stream1) + len(captured_stream2) + len(captured_stream3)
+    assert len(captured_stream1) + len(captured_stream2) + len(captured_stream3) == 10000

@@ -17,7 +17,7 @@ from rstream import (
 )
 from rstream._pyamqp.message import Properties  # type: ignore
 from rstream.exceptions import StreamAlreadySubscribed
-from tests.http_requests import count_connections_by_name
+from tests.http_requests import http_api_count_connections_by_name
 from tests.util import wait_for
 
 pytestmark = pytest.mark.asyncio
@@ -282,12 +282,13 @@ async def test_spin_new_connection_for_consumer_stream(consumer: Consumer) -> No
 
         await asyncio.sleep(0.500)
         await wait_for(
-            lambda: count_connections_by_name(conn_name) == 4 // max_subscribers_by_connection, timeout=10
+            lambda: http_api_count_connections_by_name(conn_name) == 4 // max_subscribers_by_connection,
+            timeout=10,
         )
         await consumer.close()
         assert len(consumer._subscribers) == 0
         assert len(consumer._clients) == 0
-        await wait_for(lambda: count_connections_by_name(conn_name) == 0, timeout=10)
+        await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, timeout=10)
 
     await test_with_max_subscribers_per_connection(1)
     await test_with_max_subscribers_per_connection(2)
@@ -325,12 +326,13 @@ async def test_spin_new_connection_for_producer_stream(producer: Producer) -> No
 
         await asyncio.sleep(0.500)
         await wait_for(
-            lambda: count_connections_by_name(conn_name) == 4 // max_publishers_by_connection, timeout=10
+            lambda: http_api_count_connections_by_name(conn_name) == 4 // max_publishers_by_connection,
+            timeout=10,
         )
         await producer.close()
         assert len(producer._publishers) == 0
         assert len(producer._clients) == 0
-        await wait_for(lambda: count_connections_by_name(conn_name) == 0, timeout=10)
+        await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, timeout=10)
 
     await test_with_max_producers_per_connection(1)
     await test_with_max_producers_per_connection(2)
@@ -373,7 +375,7 @@ async def test_spin_new_connection_for_producer_stream_cluster(
         assert _publisher.id in [0, 1, 2, 3, 4, 5, 6]
     assert len(cluster_producer._clients) == 6
 
-    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 6, timeout=10)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name, http_cluster_port) == 6, timeout=10)
 
     for stream in streams:
         await cluster_producer.delete_stream(stream)
@@ -411,12 +413,12 @@ async def test_spin_new_connection_for_consumer_stream_cluster(
         assert subscriber_id in [0, 1, 2, 3]
     assert len(cluster_consumer._clients) == 4
 
-    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 4, timeout=10)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name, http_cluster_port) == 4, timeout=10)
 
     await cluster_consumer.close()
     assert len(cluster_consumer._subscribers) == 0
     assert len(cluster_consumer._clients) == 0
-    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 0, timeout=10)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name, http_cluster_port) == 0, timeout=10)
 
     for stream in streams:
         await cluster_consumer.delete_stream(stream)
@@ -462,10 +464,12 @@ async def test_super_stream_cluster(
         await cluster_super_stream_producer.close()
         #  check if the connections are closed
         await wait_for(
-            lambda: count_connections_by_name("p_{}".format(conn_name), http_cluster_port) == 0, timeout=10
+            lambda: http_api_count_connections_by_name("p_{}".format(conn_name), http_cluster_port) == 0,
+            timeout=10,
         )
         await wait_for(
-            lambda: count_connections_by_name("c_{}".format(conn_name), http_cluster_port) == 0, timeout=10
+            lambda: http_api_count_connections_by_name("c_{}".format(conn_name), http_cluster_port) == 0,
+            timeout=10,
         )
 
     await test_with_subscribe_name("my_super_subscribe_name_{}".format(time.time()))

@@ -57,9 +57,9 @@ async def test_query_leader(client: Client, stream: str) -> None:
     assert (leader.host, int(leader.port)) == (client.host, int(client.port))
 
 
-async def test_partitions(client: Client, stream: str) -> None:
+async def test_partitions(client: Client) -> None:
     # create an exchange to connect the 3 supersteams
-
+    stream = "test-stream"
     await client.create_super_stream(
         stream,
         [stream + "-0", stream + "-1", stream + "-2"],
@@ -76,7 +76,8 @@ async def test_partitions(client: Client, stream: str) -> None:
     assert partitions[2] == "test-stream-2"
 
 
-async def test_routes(client: Client, stream: str) -> None:
+async def test_routes(client: Client) -> None:
+    stream = "test-stream"
     await client.create_super_stream(
         stream,
         [stream + "-0", stream + "-1", stream + "-2"],

@@ -146,6 +146,7 @@ class SuperStreamConsumer:
     async def _get_or_create_client(self, stream: str) -> Client:
         if stream not in self._clients:
             leader, replicas = await (await self.default_client).query_leader_and_replicas(stream)
+
             broker = random.choice(replicas) if replicas else leader
             self._clients[stream] = await self._pool.get(
                 addr=Addr(broker.host, broker.port),
@@ -233,10 +234,6 @@ class SuperStreamConsumer:
             consumer = self._consumer
             if consumer is not None:
                 await consumer.unsubscribe(self._subscribers[partition])
-
-    async def reconnect_stream(self, stream: str, offset: Optional[int] = None) -> None:
-        if self._consumer is not None:
-            await self._consumer.reconnect_stream(stream, offset)
 
     async def stream_exists(self, stream: str) -> bool:
         stream_exist = False
