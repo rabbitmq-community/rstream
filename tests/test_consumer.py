@@ -1051,7 +1051,6 @@ async def test_consumer_connection_broke_with_recovery_enabled(stream: str, prod
     await wait_for(lambda: offset_received == [0], 5)
     await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
     await http_api_delete_connection_and_check(conn_name)
-    # await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)
     amqp_message = AMQPMessage(
         body=bytes("second", "utf-8"),
     )
