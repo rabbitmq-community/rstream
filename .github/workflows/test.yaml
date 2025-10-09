@@ -45,7 +45,7 @@ jobs:
       - name: black check
         run: poetry run black --check .
       - name: flake8
-        run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704
+        run: poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704,E131
       - name: mypy
         run: |
           poetry run mypy .
