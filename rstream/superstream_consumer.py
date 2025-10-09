@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import ssl
 from collections import defaultdict
 from typing import (
@@ -20,7 +19,7 @@ from typing import (
 
 from . import exceptions
 from .amqp import AMQPMessage
-from .client import Addr, Client, ClientPool
+from .client import Client, ClientPool
 from .constants import (
     MAX_ITEM_ALLOWED,
     ConsumerOffsetSpecification,
@@ -142,21 +141,6 @@ class SuperStreamConsumer:
 
     async def run(self) -> None:
         await self._stop_event.wait()
-
-    async def _get_or_create_client(self, stream: str) -> Client:
-        if stream not in self._clients:
-            leader, replicas = await (await self.default_client).query_leader_and_replicas(stream)
-
-            broker = random.choice(replicas) if replicas else leader
-            self._clients[stream] = await self._pool.get(
-                addr=Addr(broker.host, broker.port),
-                connection_closed_handler=self._on_close_handler,
-                connection_name=self._connection_name,
-                stream=stream,
-                max_clients_by_connections=self._max_subscribers_by_connection,
-            )
-
-        return self._clients[stream]
 
     async def subscribe(
         self,

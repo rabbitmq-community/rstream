@@ -112,17 +112,18 @@ async def run_consumer(
     )
 
 
-async def http_api_delete_connection_and_check(connection_name: str) -> None:
-    # delay a few seconds before deleting the connection
-
+async def http_api_delete_connection_and_check(connection_name: str, port: int = 15672) -> None:
     await wait_for(
-        lambda: http_api_connection_exists(connection_name, http_api_get_connections()) is True, 5, 1
+        lambda: http_api_connection_exists(connection_name, http_api_get_connections(port)) is True, 6, 1
     )
 
-    for connection in http_api_get_connections():
+    for connection in http_api_get_connections(port):
         if connection["client_properties"]["connection_name"] == connection_name:
-            http_api_delete_connection(connection["name"])
-            await wait_for(lambda: http_api_get_connection(connection["name"]) is False, 5)
+            http_api_delete_connection(connection["name"], port)
+
+    for connection in http_api_get_connections(port):
+        if connection["client_properties"]["connection_name"] == connection_name:
+            await wait_for(lambda: http_api_get_connection(connection["name"], port) is False, 5)
 
 
 async def delete_stream_from_producer(producer: Producer, stream: str) -> None:

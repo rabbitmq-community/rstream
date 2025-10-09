@@ -13,6 +13,7 @@ from rstream import (
     SuperStreamProducer,
 )
 from rstream.client import Client
+from rstream.recovery import BackOffRecoveryStrategy
 
 from .util import (
     filter_value_extractor,
@@ -425,6 +426,7 @@ async def cluster_super_stream_consumer(pytestconfig):
         heartbeat=60,
         super_stream="cluster_super_stream_test",
         load_balancer_mode=pytestconfig.getoption("rmq_cluster_load_balancer"),
+        recovery_strategy=BackOffRecoveryStrategy(True, 1),
     )
     await consumer.start()
     try:

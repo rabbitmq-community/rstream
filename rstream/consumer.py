@@ -189,7 +189,7 @@ class Consumer(IReliableEntity):
             logger.debug("_get_or_create_client(): Getting/Creating connection")
             self._clients[stream] = await self._pool.get(
                 addr=Addr(broker.host, broker.port),
-                connection_closed_handler=self._on_close_handler,
+                connection_closed_handler=self._on_close_connection,
                 connection_name=self._connection_name,
                 stream=stream,
                 max_clients_by_connections=self._max_subscribers_by_connection,
@@ -480,16 +480,22 @@ class Consumer(IReliableEntity):
                     current_subscriber.stream,
                     error=Exception(on_closed_info.reason),
                     attempt=1,
-                    recovery_fun=lambda: self.subscribe(
-                        stream=current_subscriber.stream,
-                        subscriber_name=current_subscriber.reference,
-                        callback=current_subscriber.callback,
-                        decoder=current_subscriber.decoder,
-                        offset_specification=ConsumerOffsetSpecification(
-                            OffsetType.OFFSET, current_subscriber.offset
-                        ),
-                        filter_input=current_subscriber.filter_input,
+                    # fmt: off
+                    recovery_fun=lambda stream_s=current_subscriber.stream,
+                                        reference=current_subscriber.reference,
+                                        callback=current_subscriber.callback,
+                                        decoder=current_subscriber.decoder,
+                                        offset=current_subscriber.offset,
+                                        filter_input=current_subscriber.filter_input:
+                    self.subscribe(
+                        stream=stream_s,
+                        subscriber_name=reference,
+                        callback=callback,
+                        decoder=decoder,
+                        offset_specification=ConsumerOffsetSpecification(OffsetType.OFFSET, offset),
+                        filter_input=filter_input,
                     ),
+                    # fmt: on
                 )
                 if result is not None and inspect.isawaitable(result):
                     await result

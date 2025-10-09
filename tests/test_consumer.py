@@ -1102,6 +1102,7 @@ async def test_super_stream_consumer_connection_broke_with_recovery_enabled(
     await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
     await http_api_delete_connection_and_check(conn_name)
     await super_stream_producer.send(b"two")
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
     assert "test-super-stream-0" in streams_disconnected
     assert "test-super-stream-1" in streams_disconnected
     assert "test-super-stream-2" in streams_disconnected

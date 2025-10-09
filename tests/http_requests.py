@@ -11,8 +11,8 @@ def http_api_get_connections(port: int = 15672) -> list:
     return response.json()
 
 
-def http_api_get_connection(name: str) -> bool:
-    request = "http://guest:guest@localhost:15672/api/connections/" + urllib.parse.quote(name)
+def http_api_get_connection(name: str, port: int = 15672) -> bool:
+    request = "http://guest:guest@localhost:{}/api/connections/{}".format(port, urllib.parse.quote(name))
     response = requests.get(request, auth=HTTPBasicAuth("guest", "guest"))
     if response.status_code == 404:
         return False
@@ -35,7 +35,7 @@ def http_api_count_connections_by_name(connection_name: str, port: int = 15672) 
     return count
 
 
-def http_api_delete_connection(name: str) -> int:
-    request = "http://guest:guest@localhost:15672/api/connections/" + urllib.parse.quote(name)
+def http_api_delete_connection(name: str, port: int = 15672) -> int:
+    request = "http://guest:guest@localhost:{}/api/connections/{}".format(port, urllib.parse.quote(name))
     response = requests.delete(request, auth=HTTPBasicAuth("guest", "guest"))
     return response.status_code

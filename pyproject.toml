@@ -33,6 +33,7 @@ typing_extensions ="^4.15.0"
 
 [tool.black]
 line-length = 110
+skip-string-normalization = true
 
 [tool.mypy]
 ignore_missing_imports = true
@@ -44,4 +45,9 @@ ignore_errors = true
 
 [tool.isort]
 profile = "black"
+
+
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203", "W503"]
 

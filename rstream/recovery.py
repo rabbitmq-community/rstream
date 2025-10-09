@@ -1,4 +1,5 @@
 # define the recovery strategy in case of connection failure or metadata update
+import asyncio
 import logging
 import random
 import time
@@ -67,6 +68,7 @@ class BackOffRecoveryStrategy(RecoveryStrategy):
             "[backOff recovery strategy] waiting for {} seconds before retrying".format(backoff_time)
         )
         # add safe jitter with some randomization
+        await asyncio.sleep(backoff_time)
         time.sleep(backoff_time)
         try:
             # check if the stream still exists
