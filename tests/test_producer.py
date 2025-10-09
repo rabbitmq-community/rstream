@@ -533,7 +533,7 @@ async def test_producer_connection_broke(stream: str, consumer: Consumer) -> Non
 
     await producer_broke.close()
 
-    assert len(captured) == 1000
+    await wait_for(lambda: len(captured) == 1000, 5, 1)
 
 
 async def test_super_stream_producer_connection_broke(super_stream: str, consumer: Consumer) -> None:
