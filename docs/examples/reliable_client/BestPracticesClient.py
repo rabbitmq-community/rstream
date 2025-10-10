@@ -102,26 +102,6 @@ async def on_close_connection(on_closed_info: OnClosedErrorInfo) -> None:
         + str(on_closed_info.reason)
     )
 
-    await asyncio.sleep(2)
-    # reconnect just if the partition exists
-    for stream in on_closed_info.streams:
-        backoff = 1
-        while True:
-            try:
-                print("reconnecting stream: {}".format(stream))
-                if consumer is not None:
-                    await consumer.reconnect_stream(stream)
-                break
-            except Exception as ex:
-                if backoff > 32:
-                    # failed to found the leader
-                    print("reconnection failed")
-                    break
-                backoff = backoff * 2
-                print("exception reconnecting waiting 120s: " + str(ex))
-                await asyncio.sleep(30)
-                continue
-
 
 # Make consumers
 async def make_consumer(rabbitmq_data: dict) -> Consumer | SuperStreamConsumer:  # type: ignore

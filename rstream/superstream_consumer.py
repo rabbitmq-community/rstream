@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import ssl
 from collections import defaultdict
 from typing import (
@@ -20,13 +19,14 @@ from typing import (
 
 from . import exceptions
 from .amqp import AMQPMessage
-from .client import Addr, Client, ClientPool
+from .client import Client, ClientPool
 from .constants import (
     MAX_ITEM_ALLOWED,
     ConsumerOffsetSpecification,
     OffsetType,
 )
 from .consumer import Consumer, EventContext, MessageContext
+from .recovery import BackOffRecoveryStrategy, RecoveryStrategy
 from .superstream import (
     DefaultSuperstreamMetadata,
     SuperStreamCreationOption,
@@ -58,6 +58,7 @@ class SuperStreamConsumer:
         super_stream_creation_option: Optional[SuperStreamCreationOption] = None,
         connection_name: str = "",
         on_close_handler: Optional[CB[OnClosedErrorInfo]] = None,
+        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(),
     ):
         self._pool = ClientPool(
             host,
@@ -90,6 +91,7 @@ class SuperStreamConsumer:
         self._subscribers: dict[str, int] = defaultdict(int)
         self._on_close_handler = on_close_handler
         self._connection_name = connection_name
+        self._recovery_strategy = recovery_strategy
         if self._connection_name is None or self._connection_name == "":
             self._connection_name = "rstream-consumer"
 
@@ -139,20 +141,6 @@ class SuperStreamConsumer:
 
     async def run(self) -> None:
         await self._stop_event.wait()
-
-    async def _get_or_create_client(self, stream: str) -> Client:
-        if stream not in self._clients:
-            leader, replicas = await (await self.default_client).query_leader_and_replicas(stream)
-            broker = random.choice(replicas) if replicas else leader
-            self._clients[stream] = await self._pool.get(
-                addr=Addr(broker.host, broker.port),
-                connection_closed_handler=self._on_close_handler,
-                connection_name=self._connection_name,
-                stream=stream,
-                max_clients_by_connections=self._max_subscribers_by_connection,
-            )
-
-        return self._clients[stream]
 
     async def subscribe(
         self,
@@ -216,6 +204,7 @@ class SuperStreamConsumer:
             on_close_handler=self._on_close_handler,
             connection_name=self._connection_name,
             max_subscribers_by_connection=self._max_subscribers_by_connection,
+            recovery_strategy=self._recovery_strategy,
         )
 
         await consumer.start()
@@ -229,10 +218,6 @@ class SuperStreamConsumer:
             consumer = self._consumer
             if consumer is not None:
                 await consumer.unsubscribe(self._subscribers[partition])
-
-    async def reconnect_stream(self, stream: str, offset: Optional[int] = None) -> None:
-        if self._consumer is not None:
-            await self._consumer.reconnect_stream(stream, offset)
 
     async def stream_exists(self, stream: str) -> bool:
         stream_exist = False

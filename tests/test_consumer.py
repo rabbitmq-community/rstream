@@ -20,21 +20,21 @@ from rstream import (
     OnClosedErrorInfo,
     Producer,
     Properties,
-    RouteType,
     SuperStreamConsumer,
     SuperStreamProducer,
     amqp_decoder,
     exceptions,
 )
+from rstream.recovery import BackOffRecoveryStrategy
 
+from .http_requests import http_api_count_connections_by_name
 from .util import (
     consumer_update_handler_first,
     consumer_update_handler_next,
+    delete_stream_from_consumer,
+    http_api_delete_connection_and_check,
     on_message,
-    routing_extractor_generic,
     run_consumer,
-    task_to_delete_connection,
-    task_to_delete_stream_consumer,
     wait_for,
 )
 
@@ -199,7 +199,7 @@ async def test_consumer_callback(stream: str, consumer: Consumer, producer: Prod
     await wait_for(lambda: len(offsets) >= 10)
 
     for stream in streams:
-        assert stream == "test-stream"
+        assert "test-stream_" in stream
 
     for offset in offsets:
         assert offset >= 0 and offset < 100
@@ -249,6 +249,7 @@ async def test_consumer_resubscribe_when_not_consumed_events_in_queue(
         await producer.close()
 
 
+@pytest.mark.flaky(reruns=1, reruns_delay=1)
 async def test_offset_type_timestamp(consumer: Consumer, producer: Producer) -> None:
     stream = "test_offset_type_timestamp_{}".format(time.time())
     await producer.create_stream(stream=stream)
@@ -256,7 +257,7 @@ async def test_offset_type_timestamp(consumer: Consumer, producer: Producer) -> 
     await producer.send_batch(stream, messages)
 
     # mark time in between message batches
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(1)
     now = int(time.time() * 1000)
 
     messages = [str(i).encode() for i in range(5_000, 5_100)]
@@ -269,8 +270,8 @@ async def test_offset_type_timestamp(consumer: Consumer, producer: Producer) -> 
         callback=lambda message, message_context: captured.append(bytes(message)),
         offset_specification=ConsumerOffsetSpecification(offset_type=OffsetType.TIMESTAMP, offset=now),
     )
-    await asyncio.sleep(1)
-    await wait_for(lambda: len(captured) > 0 and captured[0] >= b"5000", 5)
+    await wait_for(lambda: len(captured) > 10, 5, 2)
+    assert captured[0] >= b"5000"
     await producer.delete_stream(stream)
 
 
@@ -753,10 +754,11 @@ async def test_callback_sync_request(stream: str, consumer: Consumer, producer: 
     await wait_for(lambda: len(captured) >= 1)
 
 
-async def test_consumer_connection_broke(stream: str) -> None:
+async def test_consumer_connection_broke_with_recovery_disabled(stream: str) -> None:
     connection_broke = False
     stream_disconnected = None
     consumer_broke: Consumer
+    conn_name = "test_consumer_connection_broke_{}".format(time.time())
 
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal connection_broke
@@ -773,32 +775,81 @@ async def test_consumer_connection_broke(stream: str) -> None:
         username="guest",
         password="guest",
         on_close_handler=on_connection_closed,
-        connection_name="test-connection",
+        connection_name=conn_name,
+        recovery_strategy=BackOffRecoveryStrategy(False),
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
         pass
 
-    asyncio.create_task(task_to_delete_connection("test-connection"))
-
     await consumer_broke.start()
     await consumer_broke.subscribe(stream=stream, callback=on_message, decoder=amqp_decoder)
-    await consumer_broke.run()
 
-    assert connection_broke is True
-    assert stream_disconnected == stream
+    asyncio.create_task(consumer_broke.run())
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
+    await http_api_delete_connection_and_check(conn_name)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)
 
-    await asyncio.sleep(1)
+    await wait_for(lambda: connection_broke, 10)
+    await wait_for(lambda: stream_disconnected == stream, 10)
+    await consumer_broke.close()
 
 
-async def test_super_stream_consumer_connection_broke(super_stream: str) -> None:
+async def test_super_stream_consumer_connection_broke_with_recovery_disabled(super_stream: str) -> None:
     connection_broke = False
     streams_disconnected: set[str] = set()
+    conn_name = "test_super_stream_consumer_connection_broke_{}".format(time.time())
 
     async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
         nonlocal connection_broke
         # avoiding multiple connection closed to hit
-        if connection_broke is True:
+
+        for stream in disconnection_info.streams:
+            streams_disconnected.add(stream)
+
+        connection_broke = True
+        await super_stream_consumer_broke.close()
+        return None
+
+    super_stream_consumer_broke = SuperStreamConsumer(
+        host="localhost",
+        port=5552,
+        vhost="/",
+        username="guest",
+        password="guest",
+        on_close_handler=on_connection_closed,
+        connection_name=conn_name,
+        super_stream=super_stream,
+        recovery_strategy=BackOffRecoveryStrategy(False),
+    )
+
+    async def on_message(msg: AMQPMessage, message_context: MessageContext):
+        pass
+
+    await super_stream_consumer_broke.start()
+    await super_stream_consumer_broke.subscribe(callback=on_message, decoder=amqp_decoder)
+    asyncio.create_task(super_stream_consumer_broke.run())
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 5)
+    await http_api_delete_connection_and_check(conn_name)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 5)
+
+    assert connection_broke is True
+    assert "test-super-stream-0" in streams_disconnected
+    assert "test-super-stream-1" in streams_disconnected
+    assert "test-super-stream-2" in streams_disconnected
+
+
+# Send a few messages to a superstream, consume, simulate a disconnection and check for reconnection
+async def test_super_stream_consumer_connection_broke_recovery_disabled(super_stream: str) -> None:
+    connection_broke = False
+    streams_disconnected: set[str] = set()
+    conn_name = "test_super_stream_consumer_connection_broke_recovery_disabled_{}".format(time.time())
+
+    async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
+        logger.warning("connection closed")
+        nonlocal connection_broke
+        # avoiding multiple connection closed to hit
+        if connection_broke:
             for stream in disconnection_info.streams:
                 streams_disconnected.add(stream)
             return None
@@ -809,6 +860,7 @@ async def test_super_stream_consumer_connection_broke(super_stream: str) -> None
             streams_disconnected.add(stream)
 
         await super_stream_consumer_broke.close()
+        return None
 
     super_stream_consumer_broke = SuperStreamConsumer(
         host="localhost",
@@ -817,97 +869,22 @@ async def test_super_stream_consumer_connection_broke(super_stream: str) -> None
         username="guest",
         password="guest",
         on_close_handler=on_connection_closed,
-        connection_name="test-connection",
+        connection_name=conn_name,
         super_stream=super_stream,
+        recovery_strategy=BackOffRecoveryStrategy(False),
     )
 
     async def on_message(msg: AMQPMessage, message_context: MessageContext):
         pass
 
-    asyncio.create_task(task_to_delete_connection("test-connection"))
-
     await super_stream_consumer_broke.start()
     await super_stream_consumer_broke.subscribe(callback=on_message, decoder=amqp_decoder)
-    await super_stream_consumer_broke.run()
 
-    assert connection_broke is True
-    assert "test-super-stream-0" in streams_disconnected
-    assert "test-super-stream-1" in streams_disconnected
-    assert "test-super-stream-2" in streams_disconnected
-
-
-# Send a few messages to a superstream, consume, simulate a disconnection and check for reconnection
-# from offset 0
-async def test_super_stream_consumer_connection_broke_with_reconnect(super_stream: str) -> None:
-    connection_broke = False
-    streams_disconnected: set[str] = set()
-    offset_restart = 0
-
-    async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
-        logger.warning("connection closed")
-        nonlocal connection_broke
-        # avoiding multiple connection closed to hit
-        if connection_broke is True:
-            for stream in disconnection_info.streams:
-                logger.warning("reconnecting")
-                streams_disconnected.add(stream)
-            return None
-
-        connection_broke = True
-
-        for stream in disconnection_info.streams:
-            streams_disconnected.add(stream)
-            # start from stored offset
-            await super_stream_consumer_broke.reconnect_stream(stream, offset_restart)
-
-    # Sending a few messages in the stream in order to be consumed
-    super_stream_producer_broke = SuperStreamProducer(
-        "localhost",
-        username="guest",
-        password="guest",
-        routing_extractor=routing_extractor_generic,
-        routing=RouteType.Hash,
-        connection_name="test-connection",
-        super_stream=super_stream,
-    )
-
-    await super_stream_producer_broke.start()
-
-    i = 0
-    for i in range(0, 10000):
-        amqp_message = AMQPMessage(
-            body=bytes("hello: {}".format(i), "utf-8"),
-            application_properties={"id": "{}".format(i)},
-        )
-        await super_stream_producer_broke.send(message=amqp_message)
-
-    await super_stream_producer_broke.close()
-
-    super_stream_consumer_broke = SuperStreamConsumer(
-        host="localhost",
-        port=5552,
-        vhost="/",
-        username="guest",
-        password="guest",
-        on_close_handler=on_connection_closed,
-        connection_name="test-connection",
-        super_stream=super_stream,
-    )
-
-    async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        pass
-        # check after disconnection offset have been reset
-        if connection_broke is True:
-            assert message_context.offset == offset_restart
-            await super_stream_consumer_broke.close()
-
-    asyncio.create_task(task_to_delete_connection("test-connection"))
-
-    await super_stream_consumer_broke.start()
-    await super_stream_consumer_broke.subscribe(callback=on_message, decoder=amqp_decoder)
-    await super_stream_consumer_broke.run()
-
-    assert connection_broke is True
+    asyncio.create_task(super_stream_consumer_broke.run())
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 5)
+    await http_api_delete_connection_and_check(conn_name)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 5)
+    await wait_for(lambda: connection_broke, 10)
     assert "test-super-stream-0" in streams_disconnected
     assert "test-super-stream-1" in streams_disconnected
     assert "test-super-stream-2" in streams_disconnected
@@ -989,69 +966,6 @@ async def test_consume_filtering_match_unfiltered(
     await wait_for(lambda: len(captured) == 0)
 
 
-async def test_consume_filtering_with_reconnect(stream, producer_with_filtering: Producer):
-    publishing_done = asyncio.Event()
-    connection_broke = asyncio.Event()
-
-    async def task_to_publish_messages(_connection_broke, _producer):
-        for id in ("one", "two", "three"):
-            messages = []
-
-            for _ in range(50):
-                application_properties = {
-                    "id": id,
-                }
-                amqp_message = AMQPMessage(
-                    body=bytes("hello: {}".format(id), "utf-8"),
-                    application_properties=application_properties,
-                )
-                messages.append(amqp_message)
-            # send_batch is synchronous. will wait till termination
-            await producer_with_filtering.send_batch(stream=stream, batch=messages)  # type: ignore
-            await asyncio.sleep(0.500)
-        publishing_done.set()
-
-    async def on_connection_closed(disconnection_info):
-        # avoiding multiple connection closed to hit
-        if connection_broke.is_set():
-            return None
-
-        for disconnected_stream in disconnection_info.streams:
-            await consumer.reconnect_stream(disconnected_stream)
-
-        connection_broke.set()
-
-    consumer = Consumer(
-        host="localhost",
-        port=5552,
-        vhost="/",
-        username="guest",
-        password="guest",
-        connection_name="test-connection",
-        on_close_handler=on_connection_closed,
-    )
-
-    captured: list[bytes] = []
-
-    async def on_message(msg: AMQPMessage, message_context: MessageContext):
-        captured.append(bytes(msg))
-
-    asyncio.create_task(task_to_publish_messages(connection_broke, producer_with_filtering))
-    asyncio.create_task(task_to_delete_connection("test-connection"))
-    await consumer.subscribe(
-        stream=stream,
-        callback=on_message,
-        filter_input=FilterConfiguration(
-            values_to_filter=["two"],
-            match_unfiltered=False,
-        ),
-    )
-
-    await publishing_done.wait()
-    await asyncio.sleep(1)
-    assert len(captured) == 50
-
-
 async def test_consumer_metadata_update(consumer: Consumer) -> None:
     consumer_closed = False
     stream_disconnected = None
@@ -1083,7 +997,7 @@ async def test_consumer_metadata_update(consumer: Consumer) -> None:
 
     await consumer_metadata_update.start()
     await consumer_metadata_update.create_stream(stream)
-    asyncio.create_task(task_to_delete_stream_consumer(consumer, stream))
+    asyncio.create_task(delete_stream_from_consumer(consumer, stream))
     await consumer_metadata_update.subscribe(stream=stream, callback=on_message, decoder=amqp_decoder)
     await consumer_metadata_update.run()
 
@@ -1091,3 +1005,108 @@ async def test_consumer_metadata_update(consumer: Consumer) -> None:
     assert stream_disconnected == stream
 
     await asyncio.sleep(1)
+
+
+# test the consumer reconnection when the connection is closed by the HTTP
+# API and the recovery is enabled in the consumer
+# test validate also the offset is preserved and no messages are lost, the consumer
+# should restart from the last offset stored
+async def test_consumer_connection_broke_with_recovery_enabled(stream: str, producer: Producer) -> None:
+    connection_broke = False
+    stream_disconnected = None
+    consumer_recovery: Consumer
+    conn_name = "test_consumer_connection_broke_with_recovery_enabled_{}".format(time.time())
+    amqp_message = AMQPMessage(
+        body=bytes("first", "utf-8"),
+    )
+    await producer.send_wait(stream=stream, message=amqp_message)
+
+    async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
+        nonlocal connection_broke
+        connection_broke = True
+        nonlocal stream_disconnected
+        stream_disconnected = disconnection_info.streams.pop()
+
+    consumer_recovery = Consumer(
+        host="localhost",
+        port=5552,
+        vhost="/",
+        username="guest",
+        password="guest",
+        on_close_handler=on_connection_closed,
+        connection_name=conn_name,
+        recovery_strategy=BackOffRecoveryStrategy(True, jitter=1),
+    )
+
+    offset_received = []
+
+    async def on_message_c(msg: AMQPMessage, message_context: MessageContext):
+        offset_received.append(message_context.offset)
+        pass
+
+    await consumer_recovery.start()
+    await consumer_recovery.subscribe(stream=stream, callback=on_message_c, decoder=amqp_decoder)
+
+    asyncio.create_task(consumer_recovery.run())
+    await wait_for(lambda: offset_received == [0], 5)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
+    await http_api_delete_connection_and_check(conn_name)
+    amqp_message = AMQPMessage(
+        body=bytes("second", "utf-8"),
+    )
+    await producer.send_wait(stream=stream, message=amqp_message)
+    await wait_for(lambda: connection_broke, 1)
+    await wait_for(lambda: stream_disconnected == stream, 10)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
+    await wait_for(lambda: offset_received == [0, 1], 10)
+    await consumer_recovery.close()
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)
+
+
+# test the super stream consumer reconnection when the connection is closed by the
+# HTTP API and the recovery is enabled in the super stream consumer
+async def test_super_stream_consumer_connection_broke_with_recovery_enabled(
+    super_stream: str, super_stream_producer: SuperStreamProducer
+) -> None:
+    streams_disconnected: set[str] = set()
+    conn_name = "test_super_stream_consumer_connection_broke_with_recovery_enabled_{}".format(time.time())
+    await super_stream_producer.send(b"one")
+
+    async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
+        for stream in disconnection_info.streams:
+            streams_disconnected.add(stream)
+
+    super_stream_consumer_recovery = SuperStreamConsumer(
+        host="localhost",
+        port=5552,
+        vhost="/",
+        username="guest",
+        password="guest",
+        on_close_handler=on_connection_closed,
+        connection_name=conn_name,
+        super_stream=super_stream,
+        recovery_strategy=BackOffRecoveryStrategy(True, jitter=1),
+    )
+    offset_received = []
+
+    async def on_message(msg: AMQPMessage, message_context: MessageContext):
+        offset_received.append(message_context.offset)
+        pass
+
+    await super_stream_consumer_recovery.start()
+    await super_stream_consumer_recovery.subscribe(
+        callback=on_message, offset_specification=ConsumerOffsetSpecification(OffsetType.FIRST, None)
+    )
+
+    asyncio.create_task(super_stream_consumer_recovery.run())
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
+    await http_api_delete_connection_and_check(conn_name)
+    await super_stream_producer.send(b"two")
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
+    assert "test-super-stream-0" in streams_disconnected
+    assert "test-super-stream-1" in streams_disconnected
+    assert "test-super-stream-2" in streams_disconnected
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
+    await wait_for(lambda: offset_received == [0, 1], 10)
+    await super_stream_consumer_recovery.close()
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)

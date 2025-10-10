@@ -10,6 +10,7 @@ from rstream import (
     AMQPMessage,
     Consumer,
     MessageContext,
+    OnClosedErrorInfo,
     Producer,
     SuperStreamConsumer,
     SuperStreamProducer,
@@ -17,8 +18,9 @@ from rstream import (
 )
 from rstream._pyamqp.message import Properties  # type: ignore
 from rstream.exceptions import StreamAlreadySubscribed
-from tests.http_requests import count_connections_by_name
-from tests.util import wait_for
+from rstream.recovery import BackOffRecoveryStrategy
+from tests.http_requests import http_api_count_connections_by_name
+from tests.util import http_api_delete_connection_and_check, wait_for
 
 pytestmark = pytest.mark.asyncio
 
@@ -282,12 +284,13 @@ async def test_spin_new_connection_for_consumer_stream(consumer: Consumer) -> No
 
         await asyncio.sleep(0.500)
         await wait_for(
-            lambda: count_connections_by_name(conn_name) == 4 // max_subscribers_by_connection, timeout=10
+            lambda: http_api_count_connections_by_name(conn_name) == 4 // max_subscribers_by_connection,
+            timeout=10,
         )
         await consumer.close()
         assert len(consumer._subscribers) == 0
         assert len(consumer._clients) == 0
-        await wait_for(lambda: count_connections_by_name(conn_name) == 0, timeout=10)
+        await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, timeout=10)
 
     await test_with_max_subscribers_per_connection(1)
     await test_with_max_subscribers_per_connection(2)
@@ -325,12 +328,13 @@ async def test_spin_new_connection_for_producer_stream(producer: Producer) -> No
 
         await asyncio.sleep(0.500)
         await wait_for(
-            lambda: count_connections_by_name(conn_name) == 4 // max_publishers_by_connection, timeout=10
+            lambda: http_api_count_connections_by_name(conn_name) == 4 // max_publishers_by_connection,
+            timeout=10,
         )
         await producer.close()
         assert len(producer._publishers) == 0
         assert len(producer._clients) == 0
-        await wait_for(lambda: count_connections_by_name(conn_name) == 0, timeout=10)
+        await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, timeout=10)
 
     await test_with_max_producers_per_connection(1)
     await test_with_max_producers_per_connection(2)
@@ -373,7 +377,7 @@ async def test_spin_new_connection_for_producer_stream_cluster(
         assert _publisher.id in [0, 1, 2, 3, 4, 5, 6]
     assert len(cluster_producer._clients) == 6
 
-    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 6, timeout=10)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name, http_cluster_port) == 6, timeout=10)
 
     for stream in streams:
         await cluster_producer.delete_stream(stream)
@@ -411,12 +415,12 @@ async def test_spin_new_connection_for_consumer_stream_cluster(
         assert subscriber_id in [0, 1, 2, 3]
     assert len(cluster_consumer._clients) == 4
 
-    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 4, timeout=10)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name, http_cluster_port) == 4, timeout=10)
 
     await cluster_consumer.close()
     assert len(cluster_consumer._subscribers) == 0
     assert len(cluster_consumer._clients) == 0
-    await wait_for(lambda: count_connections_by_name(conn_name, http_cluster_port) == 0, timeout=10)
+    await wait_for(lambda: http_api_count_connections_by_name(conn_name, http_cluster_port) == 0, timeout=10)
 
     for stream in streams:
         await cluster_consumer.delete_stream(stream)
@@ -431,7 +435,6 @@ async def test_super_stream_cluster(
     cluster_super_stream_consumer: SuperStreamConsumer,
     http_cluster_port: int,
 ) -> None:
-
     async def test_with_subscribe_name(p_subscriber_name: Optional[str]):
         LOGGER.info("Validating super stream cluster")
         messages_sent = 10
@@ -462,11 +465,88 @@ async def test_super_stream_cluster(
         await cluster_super_stream_producer.close()
         #  check if the connections are closed
         await wait_for(
-            lambda: count_connections_by_name("p_{}".format(conn_name), http_cluster_port) == 0, timeout=10
+            lambda: http_api_count_connections_by_name("p_{}".format(conn_name), http_cluster_port) == 0,
+            timeout=10,
         )
         await wait_for(
-            lambda: count_connections_by_name("c_{}".format(conn_name), http_cluster_port) == 0, timeout=10
+            lambda: http_api_count_connections_by_name("c_{}".format(conn_name), http_cluster_port) == 0,
+            timeout=10,
         )
 
     await test_with_subscribe_name("my_super_subscribe_name_{}".format(time.time()))
     await test_with_subscribe_name(None)
+
+
+# test the super stream in cluster configuration
+# to see if the subscriber restart consumption from the last offset after the
+# connection is killed
+@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Skip cluster tests in GitHub Actions")
+async def test_super_stream_cluster_restart_from_last_offset(
+    super_stream_cluster: str,
+    cluster_super_stream_producer: SuperStreamProducer,
+    http_cluster_port: int,
+    pytestconfig,
+) -> None:
+    LOGGER.info("Validating super stream cluster restart from last offset")
+    messages_sent = 20
+    messages_received_s = 0
+    conn_name = "test_super_stream_cluster_restart_from_last_offset_{}".format(time.time())
+    subscriber_name = "my-subscriber-{}".format(time.time())
+    stream_disconnected = []
+
+    async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
+        for stream in disconnection_info.streams:
+            stream_disconnected.append(stream)
+
+    offsets = []
+
+    async def on_message_s(_msg: AMQPMessage, message_context: MessageContext):
+        nonlocal messages_received_s
+        messages_received_s += 1
+        assert message_context.subscriber_name == subscriber_name
+        offsets.append(message_context.offset)
+
+    cluster_super_stream_consumer = SuperStreamConsumer(
+        host=pytestconfig.getoption("rmq_cluster_host"),
+        port=pytestconfig.getoption("rmq_cluster_port"),
+        ssl_context=None,
+        username=pytestconfig.getoption("rmq_cluster_username"),
+        password=pytestconfig.getoption("rmq_cluster_password"),
+        frame_max=1024 * 1024,
+        heartbeat=60,
+        super_stream=super_stream_cluster,
+        connection_name=conn_name,
+        on_close_handler=on_connection_closed,
+        load_balancer_mode=pytestconfig.getoption("rmq_cluster_load_balancer"),
+        recovery_strategy=BackOffRecoveryStrategy(True, 1),
+    )
+
+    await cluster_super_stream_consumer.subscribe(
+        callback=on_message_s,
+        subscriber_name=subscriber_name,
+    )
+
+    for i in range(messages_sent):
+        amqp_message = AMQPMessage(
+            body=bytes("a:{}".format(i), "utf-8"),
+            properties=Properties(message_id=str(i)),
+        )
+        await cluster_super_stream_producer.send(amqp_message)
+        await asyncio.sleep(0.1)
+
+    await wait_for(lambda: messages_received_s == messages_sent, timeout=10)
+
+    await http_api_delete_connection_and_check(conn_name, http_cluster_port)
+
+    await wait_for(lambda: len(stream_disconnected) == 3, 5, 1)
+
+    for i in range(messages_sent):
+        amqp_message = AMQPMessage(
+            body=bytes("a:{}".format(i), "utf-8"),
+            properties=Properties(message_id=str(i)),
+        )
+        await cluster_super_stream_producer.send(amqp_message)
+
+    await wait_for(lambda: messages_received_s == messages_sent * 2, timeout=10, interval=2)
+    assert offsets[0] == 0
+    assert len(offsets) == messages_sent * 2

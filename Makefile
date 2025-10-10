@@ -10,7 +10,7 @@ format:
 	poetry --version
 	poetry run isort .
 	poetry run black --exclude=venv .
-	poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704
+	poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704,E131
 	poetry run mypy .
 
 rabbitmq-ha-proxy:
@@ -23,6 +23,6 @@ rabbitmq-ha-proxy:
 	cd compose/ha_tls; docker compose up
 
 test: format
-	poetry run pytest .
+	poetry run pytest . -s -v
 help:
 	cat Makefile

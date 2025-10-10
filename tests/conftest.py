@@ -1,5 +1,6 @@
 import logging
 import ssl
+import time
 
 import pytest_asyncio
 
@@ -12,6 +13,7 @@ from rstream import (
     SuperStreamProducer,
 )
 from rstream.client import Client
+from rstream.recovery import BackOffRecoveryStrategy
 
 from .util import (
     filter_value_extractor,
@@ -88,17 +90,18 @@ async def client(no_auth_client: Client, pytestconfig):
 
 @pytest_asyncio.fixture()
 async def stream(client: Client):
+    test_name = "test-stream_{}".format(time.time())
     try:
-        await client.delete_stream("test-stream")
+        await client.delete_stream(test_name)
     except Exception:
         # it doesn't matter if it fails
         pass
 
-    await client.create_stream("test-stream")
+    await client.create_stream(test_name)
     try:
-        yield "test-stream"
+        yield test_name
     finally:
-        await client.delete_stream("test-stream")
+        await client.delete_stream(test_name)
 
 
 @pytest_asyncio.fixture()
@@ -423,6 +426,7 @@ async def cluster_super_stream_consumer(pytestconfig):
         heartbeat=60,
         super_stream="cluster_super_stream_test",
         load_balancer_mode=pytestconfig.getoption("rmq_cluster_load_balancer"),
+        recovery_strategy=BackOffRecoveryStrategy(True, 1),
     )
     await consumer.start()
     try:
