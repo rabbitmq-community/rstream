@@ -400,7 +400,7 @@ class Producer:
 
         # this is just called in case of send_wait
         else:
-            logger.debug("[producer] Send batch in  synchronous mode, waiting for confirms")
+            logger.debug("[producer] Send batch in synchronous mode, waiting for confirms")
             future: asyncio.Future[None] = asyncio.Future()
             self._waiting_for_confirm[publisher.id][future] = publishing_ids.copy()
             await asyncio.wait_for(future, timeout)
