@@ -472,13 +472,13 @@ class Consumer(IReliableEntity):
                 await result
 
         for stream in on_closed_info.streams.copy():
-            current_subscriber = await self._get_subscriber_by_stream(stream)
             async with self._lock:
+                current_subscriber = await self._get_subscriber_by_stream(stream)
                 if current_subscriber is not None:
                     del self._subscribers[current_subscriber.subscription_id]
-                    await self._remove_stream_from_client(stream)
 
             if current_subscriber is not None:
+                await self._remove_stream_from_client(stream)
                 result = self._recovery_strategy.recover(
                     self,
                     current_subscriber.stream,
