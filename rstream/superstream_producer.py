@@ -13,11 +13,12 @@ from typing import (
     TypeVar,
 )
 
-from . import exceptions
+from . import OnClosedErrorInfo, exceptions
 from .amqp import _MessageProtocol
 from .client import Client, ClientPool
 from .constants import MAX_ITEM_ALLOWED
 from .producer import ConfirmationStatus, Producer
+from .recovery import CB_CONN
 from .superstream import (
     DefaultSuperstreamMetadata,
     HashRoutingMurmurStrategy,
@@ -62,6 +63,7 @@ class SuperStreamProducer:
         default_batch_publishing_delay: float = 0.2,
         connection_name: str = "",
         filter_value_extractor: Optional[CB_F[Any]] = None,
+        on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
     ):
         self._pool = ClientPool(
             host,
@@ -100,6 +102,7 @@ class SuperStreamProducer:
         # is containing partitions name for every stream in case of CREATE/DELETE superstream (to clean up publishers)
         self._partitions: list = []
         self._max_publishers_by_connection = max_publishers_by_connection
+        self._on_close_handler = on_close_handler
 
     async def _get_producer(self) -> Producer:
         logger.debug("_get_producer() Making or getting a producer")
@@ -118,6 +121,7 @@ class SuperStreamProducer:
                 connection_name=self._connection_name,
                 filter_value_extractor=self._filter_value_extractor,
                 max_publishers_by_connection=self._max_publishers_by_connection,
+                on_close_handler=self._on_close_handler,
             )
             await producer.start()
             self._producer = producer
@@ -202,9 +206,8 @@ class SuperStreamProducer:
                 partitions.append(super_stream + "-" + binding_keys[i])
 
         try:
-            await (await self.default_client).create_super_stream(
-                super_stream, partitions, new_binding_key, arguments
-            )
+            c = await self.default_client
+            await c.create_super_stream(super_stream, partitions, new_binding_key, arguments)
         except exceptions.StreamAlreadyExists:
             if not exists_ok:
                 raise

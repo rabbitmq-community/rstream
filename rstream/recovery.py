@@ -5,6 +5,11 @@ import random
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Annotated, Any, Awaitable, Callable, TypeVar, Union
+
+MT = TypeVar("MT")
+CB = Annotated[Callable[[MT, Any], Union[None, Awaitable[None]]], "Message callback type"]
+CB_CONN = Annotated[Callable[[MT], Union[None, Awaitable[Any]]], "Message callback type"]
 
 # define the interface for recovery strategy
 
@@ -79,6 +84,7 @@ class BackOffRecoveryStrategy(RecoveryStrategy):
                     "[backOff recovery strategy] stream: {} exists, trying to recover".format(stream)
                 )
                 await recovery_fun()
+                self.backoff_seconds = 1.0
             else:
                 logging.debug(
                     "[backOff recovery strategy] stream: {} does not exist. Recovery stopped".format(stream)
@@ -87,6 +93,8 @@ class BackOffRecoveryStrategy(RecoveryStrategy):
             logging.error(
                 "[backOff recovery strategy] error checking stream existence or recovering: {}".format(ex)
             )
+            self.backoff_seconds = self.backoff_seconds * 2
+            # retry again
             await self.recover(entity, stream, ex, attempt + 1, recovery_fun)
 
 

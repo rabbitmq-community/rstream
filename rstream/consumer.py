@@ -9,13 +9,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from functools import partial
 from typing import (
-    Annotated,
     Any,
     Awaitable,
     Callable,
     Iterator,
     Optional,
-    TypeVar,
     Union,
 )
 
@@ -32,13 +30,16 @@ from .constants import (
     SlasMechanism,
 )
 from .exceptions import StreamAlreadySubscribed
-from .recovery import BackOffRecoveryStrategy, IReliableEntity, RecoveryStrategy
+from .recovery import (
+    CB_CONN,
+    MT,
+    BackOffRecoveryStrategy,
+    IReliableEntity,
+    RecoveryStrategy,
+)
 from .schema import OffsetSpecification
 from .utils import FilterConfiguration, OnClosedErrorInfo
 
-MT = TypeVar("MT")
-CB = Annotated[Callable[[MT, Any], Union[None, Awaitable[None]]], "Message callback type"]
-CB_CONN = Annotated[Callable[[MT], Union[None, Awaitable[Any]]], "Message callback type"]
 logger = logging.getLogger(__name__)
 
 
@@ -472,9 +473,12 @@ class Consumer(IReliableEntity):
 
         for stream in on_closed_info.streams.copy():
             current_subscriber = await self._get_subscriber_by_stream(stream)
+            async with self._lock:
+                if current_subscriber is not None:
+                    del self._subscribers[current_subscriber.subscription_id]
+                    await self._remove_stream_from_client(stream)
+
             if current_subscriber is not None:
-                del self._subscribers[current_subscriber.subscription_id]
-                await self._remove_stream_from_client(stream)
                 result = self._recovery_strategy.recover(
                     self,
                     current_subscriber.stream,

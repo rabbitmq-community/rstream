@@ -8,7 +8,7 @@ from rstream import (
     SuperStreamProducer,
 )
 
-SUPER_STREAM = "invoices3"
+SUPER_STREAM = "invoices"
 MESSAGES = 1000000
 
 

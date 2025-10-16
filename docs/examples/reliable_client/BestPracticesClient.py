@@ -24,17 +24,20 @@ from rstream import (
 
 # global variables needed by the test
 confirmed_count = 0
+error_count = 0
 messages_consumed = 0
 messages_per_producer = 0
 producer: Optional[Producer] = None
 consumer: Optional[Consumer] = None
 
-logging.getLogger("uamqp").setLevel(logging.ERROR)
+
+logging.getLogger().setLevel(logging.DEBUG)
+logging.basicConfig()
 
 
 # Load configuration file (appsettings.json)
-async def load_json_file(configuration_file: str) -> dict:
-    data = open("./python_rstream/appsettings.json")
+async def load_json_file() -> dict:
+    data = open("appsettings.json")
     return json.load(data)
 
 
@@ -42,8 +45,12 @@ async def print_test_variables():
     while True:
         await asyncio.sleep(5)
         # the number of confirmed messages should be the same as the total messages we sent
-        print("confirmed_count: " + str(confirmed_count))
-        print("message consumed: " + str(messages_consumed))
+        print(
+            "[Messages confirmed: {}, Messages Error:{}] Total: {}".format(
+                confirmed_count, error_count, confirmed_count + error_count
+            )
+        )
+        print("[Messages consumed: {}]".format(messages_consumed))
 
 
 # Routing instruction for SuperStream Producer
@@ -62,6 +69,7 @@ async def make_producer(rabbitmq_data: dict) -> Producer | SuperStreamProducer: 
     stream_name = rabbitmq_data["StreamName"]
     max_publishers_by_connection = rabbitmq_data["MaxPublishersByConnection"]
     producers = rabbitmq_data["Producers"]
+    partitions = rabbitmq_data["PartitionsCount"]
 
     if bool(rabbitmq_data["SuperStream"]) is False:
         producer = Producer(
@@ -75,7 +83,7 @@ async def make_producer(rabbitmq_data: dict) -> Producer | SuperStreamProducer: 
         )
 
     else:
-        super_stream_creation_opt = SuperStreamCreationOption(n_partitions=int(producers))
+        super_stream_creation_opt = SuperStreamCreationOption(n_partitions=int(partitions))
         producer = SuperStreamProducer(  # type: ignore
             host=host,
             username=username,
@@ -115,7 +123,7 @@ async def make_consumer(rabbitmq_data: dict) -> Consumer | SuperStreamConsumer: 
     n_producers = rabbitmq_data["Producers"]
     max_subscribers_by_connection = rabbitmq_data["MaxSubscribersByConnection"]
 
-    if bool(rabbitmq_data["SuperStream"]) is False:
+    if not bool(rabbitmq_data["SuperStream"]):
         consumer = Consumer(
             host=host,
             username=username,
@@ -161,18 +169,12 @@ async def _on_publish_confirm_client(confirmation: ConfirmationStatus) -> None:
 async def on_message(msg: AMQPMessage, message_context: MessageContext):
     global messages_consumed
     messages_consumed = messages_consumed + 1
-    # some printf after some messages consumed in order to check that we are working...
-    if (messages_consumed % 100000) == 0:
-        print(
-            "Received message: {} from stream: {} - message offset: {}".format(
-                msg, message_context.stream, message_context.offset
-            )
-        )
 
 
 async def publish(rabbitmq_configuration: dict):
-    global producer
+    global producer, error_count
     global messages_per_producer
+    global confirmed_count
 
     stream_name = rabbitmq_configuration["StreamName"]
     is_super_stream_scenario = bool(rabbitmq_configuration["SuperStream"])
@@ -206,19 +208,24 @@ async def publish(rabbitmq_configuration: dict):
         if not is_super_stream_scenario:
             for p in range(producers):
                 try:
-                    await producer.send(  # type: ignore
+                    await producer.send_wait(  # type: ignore
                         stream=stream_name + "-" + str(p),
                         message=amqp_message,
-                        on_publish_confirm=_on_publish_confirm_client,
                     )
+                    confirmed_count = confirmed_count + 1
                 except Exception as ex:
                     print("exception while sending " + str(ex))
+                    logging.error("exception while sending " + str(ex))
+                    error_count = error_count + 1
+                    await asyncio.sleep(2)
 
         else:
             try:
                 await producer.send(message=amqp_message, on_publish_confirm=_on_publish_confirm_client)  # type: ignore
             except Exception as ex:
                 print("exception while sending " + str(ex))
+                error_count = error_count + 1
+                await asyncio.sleep(2)
 
     await producer.close()  # type: ignore
 
@@ -279,7 +286,7 @@ async def main():
         signal.SIGINT, lambda: asyncio.create_task(close(producer_task, consumer_task, printer_test_task))
     )
 
-    configuration = await load_json_file("appsettings.json")
+    configuration = await load_json_file()
     rabbitmq_configuration = configuration["RabbitMQ"]
 
     # match not supported by mypy we need to fall back to if... else...
@@ -302,6 +309,7 @@ async def main():
 
     if rabbitmq_configuration["Producers"] > 0:
         producer_task = asyncio.create_task(publish(rabbitmq_configuration))
+        await asyncio.sleep(3)
     if rabbitmq_configuration["Consumers"] > 0:
         consumer_task = asyncio.create_task(consume(rabbitmq_configuration))
 
