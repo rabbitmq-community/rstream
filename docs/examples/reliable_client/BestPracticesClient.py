@@ -37,8 +37,8 @@ logging.basicConfig()
 
 # Load configuration file (appsettings.json)
 async def load_json_file() -> dict:
-    data = open("appsettings.json")
-    return json.load(data)
+    with open("appsettings.json") as f:
+        return json.load(f)
 
 
 async def print_test_variables():
