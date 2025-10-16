@@ -45,12 +45,12 @@ async def print_test_variables():
     while True:
         await asyncio.sleep(5)
         # the number of confirmed messages should be the same as the total messages we sent
-        print(
+        logging.info(
             "[Messages confirmed: {}, Messages Error:{}] Total: {}".format(
                 confirmed_count, error_count, confirmed_count + error_count
             )
         )
-        print("[Messages consumed: {}]".format(messages_consumed))
+        logging.info("[Messages consumed: {}]".format(messages_consumed))
 
 
 # Routing instruction for SuperStream Producer
@@ -68,10 +68,9 @@ async def make_producer(rabbitmq_data: dict) -> Producer | SuperStreamProducer: 
     load_balancer = bool(rabbitmq_data["LoadBalancer"])
     stream_name = rabbitmq_data["StreamName"]
     max_publishers_by_connection = rabbitmq_data["MaxPublishersByConnection"]
-    producers = rabbitmq_data["Producers"]
     partitions = rabbitmq_data["PartitionsCount"]
 
-    if bool(rabbitmq_data["SuperStream"]) is False:
+    if not bool(rabbitmq_data["SuperStream"]):
         producer = Producer(
             host=host,
             username=username,

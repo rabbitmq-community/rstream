@@ -33,11 +33,11 @@ from .compression import (
     ICompressionCodec,
 )
 from .constants import MAX_ITEM_ALLOWED, Key, SlasMechanism
-from .recovery import CB_CONN
 from .exceptions import (
     MaxPublishersPerInstance,
     StreamDoesNotExist,
 )
+from .recovery import CB_CONN
 from .utils import OnClosedErrorInfo, RawMessage
 
 MessageT = TypeVar("MessageT", _MessageProtocol, bytes)
