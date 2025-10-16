@@ -33,7 +33,7 @@ from .compression import (
     ICompressionCodec,
 )
 from .constants import MAX_ITEM_ALLOWED, Key, SlasMechanism
-from .consumer import CB_CONN
+from .recovery import CB_CONN
 from .exceptions import (
     MaxPublishersPerInstance,
     StreamDoesNotExist,
