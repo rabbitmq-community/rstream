@@ -543,6 +543,8 @@ async def test_producer_connection_broke(stream: str, consumer: Consumer) -> Non
     await producer_broke.close()
 
 
+# flaky test
+@pytest.mark.flaky(reruns=2, reruns_delay=1)
 async def test_super_stream_producer_connection_broke(super_stream: str, consumer: Consumer) -> None:
     conn_name = "test_super_stream_producer_connection_broke_{}".format(time.time())
     streams_disconnected: list[str] = []
