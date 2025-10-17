@@ -79,6 +79,7 @@ async def make_producer(rabbitmq_data: dict) -> Producer | SuperStreamProducer: 
             vhost=vhost,
             load_balancer_mode=load_balancer,
             max_publishers_by_connection=max_publishers_by_connection,
+            on_close_handler=on_close_connection,
         )
 
     else:
@@ -100,7 +101,7 @@ async def make_producer(rabbitmq_data: dict) -> Producer | SuperStreamProducer: 
     return producer
 
 
-# metadata and disconnection events for consumers
+# metadata and disconnection events for consumers/producer
 async def on_close_connection(on_closed_info: OnClosedErrorInfo) -> None:
     print(
         "connection has been closed from stream: "
@@ -194,9 +195,10 @@ async def publish(rabbitmq_configuration: dict):
 
     for i in range(messages_per_producer):
         try:
-            await asyncio.sleep(delay_sending_msg)
+            if delay_sending_msg > 0:
+                await asyncio.sleep(delay_sending_msg)
         except asyncio.exceptions.CancelledError:
-            print("exception in sleeping")
+            logging.error("publishing task cancelled")
             return
 
         amqp_message = AMQPMessage(
@@ -207,14 +209,20 @@ async def publish(rabbitmq_configuration: dict):
         if not is_super_stream_scenario:
             for p in range(producers):
                 try:
-                    await producer.send_wait(  # type: ignore
+                    await producer.send(  # type: ignore
                         stream=stream_name + "-" + str(p),
                         message=amqp_message,
+                        on_publish_confirm=_on_publish_confirm_client,
                     )
-                    confirmed_count = confirmed_count + 1
+                    # confirmed_count = confirmed_count + 1
                 except Exception as ex:
-                    print("exception while sending " + str(ex))
-                    logging.error("exception while sending " + str(ex))
+                    # wait a bit before retrying in case of error
+                    # maybe the client is disconnected so we give it time to reconnect
+                    logging.error(
+                        "exception while sending message to the stream {}. err: {}".format(
+                            stream_name + "-" + str(p), str(ex)
+                        )
+                    )
                     error_count = error_count + 1
                     await asyncio.sleep(2)
 
@@ -222,7 +230,13 @@ async def publish(rabbitmq_configuration: dict):
             try:
                 await producer.send(message=amqp_message, on_publish_confirm=_on_publish_confirm_client)  # type: ignore
             except Exception as ex:
-                print("exception while sending " + str(ex))
+                # wait a bit before retrying in case of error
+                # maybe the client is disconnected so we give it time to reconnect
+                logging.error(
+                    "exception while sending message to the super stream {}. err: {}".format(
+                        stream_name, str(ex)
+                    )
+                )
                 error_count = error_count + 1
                 await asyncio.sleep(2)
 

@@ -175,10 +175,14 @@ class Consumer(IReliableEntity):
         await self._stop_event.wait()
 
     async def _get_or_create_client(self, stream: str) -> Client:
-        logger.debug("_get_or_create_client(): Get or create new client/connection")
+        logger.debug(
+            "[get_or_create_client] Get or create new client/connection for stream: {}".format(stream)
+        )
         if stream not in self._clients:
             if self._default_client is None:
-                logger.debug("_get_or_create_client(): Creating locator connection")
+                logger.debug(
+                    "[get_or_create_client] Creating locator connection for stream: {}".format(stream)
+                )
                 self._default_client = await self._pool.get(
                     connection_closed_handler=self._on_close_connection,
                     connection_name=self._connection_name,
@@ -187,7 +191,11 @@ class Consumer(IReliableEntity):
 
             leader, replicas = await (await self.default_client).query_leader_and_replicas(stream)
             broker = random.choice(replicas) if replicas else leader
-            logger.debug("_get_or_create_client(): Getting/Creating connection")
+            logger.debug(
+                "[get_or_create_client] Getting/Creating connection for broker: {}:{}".format(
+                    broker.host, broker.port
+                )
+            )
             self._clients[stream] = await self._pool.get(
                 addr=Addr(broker.host, broker.port),
                 connection_closed_handler=self._on_close_connection,
@@ -210,7 +218,7 @@ class Consumer(IReliableEntity):
         offset: Optional[int],
         filter_input: Optional[FilterConfiguration],
     ) -> _Subscriber:
-        logger.debug("_create_subscriber(): Create subscriber")
+        logger.debug("[create_subscriber] Create subscriber for stream : {}".format(stream))
         #  need to check if the current subscribers for this stream reached the max limit
         # We can have multiple subscribers sharing same connection, so their ids must be distinct
 
@@ -352,7 +360,7 @@ class Consumer(IReliableEntity):
         raise exceptions.MaxConsumersPerInstance("Max consumers per connection reached")
 
     async def unsubscribe(self, subscriber_id: int) -> None:
-        logger.debug("unsubscribe(): UnSubscribing and removing handlers")
+        logger.debug("[unsubscribe] UnSubscribing and removing handlers")
         subscriber = self._subscribers[subscriber_id]
 
         await subscriber.client.stop_queue_listener_task(subscriber_id=subscriber_id)
@@ -367,9 +375,12 @@ class Consumer(IReliableEntity):
         try:
             await asyncio.wait_for(subscriber.client.unsubscribe(subscriber.subscription_id), 5)
         except asyncio.TimeoutError:
-            logger.warning("timeout when closing consumer and deleting publisher")
+            logger.warning(
+                "[unsubscribe] timeout when closing consumer and deleting it for stream: %s",
+                subscriber.stream,
+            )
         except BaseException as exc:
-            logger.warning("exception in unsubscribe of Consumer: %s", exc)
+            logger.warning(" [unsubscribe] exception in unsubscribe of Consumer: %s", exc)
 
         stream = subscriber.stream
 
@@ -448,12 +459,18 @@ class Consumer(IReliableEntity):
                 await maybe_coro
 
     async def _on_metadata_update(self, frame: schema.MetadataUpdate) -> None:
-        logger.debug("_on_metadata_update: On metadata update event triggered on producer")
         if frame.metadata_info.stream not in self._clients:
             return
+        logger.debug(
+            "[on_metadata_update] On metadata update event triggered on consumer for stream: %s",
+            frame.metadata_info.stream,
+        )
         await self._maybe_clean_up_during_lost_connection(frame.metadata_info.stream)
         if self._on_close_handler is not None:
-            logger.debug("_on_metadata_update: on_close_handler provided calling")
+            logger.debug(
+                "[on_metadata_update] on_close_handler provided calling for stream: %s",
+                frame.metadata_info.stream,
+            )
             metadata_update_info = OnClosedErrorInfo("MetaData Update", [frame.metadata_info.stream])
             result = self._on_close_handler(metadata_update_info)
             if result is not None and inspect.isawaitable(result):

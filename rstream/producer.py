@@ -667,10 +667,13 @@ class Producer:
                         await result
             ids.difference_update(frame.publishing_ids)
             if not ids:
-                logger.debug("_on_publish_confirm: set empty setting future result")
+                logger.debug("[on_publish_confirm] set empty setting future result")
                 del waiting[confirmation]
                 if isinstance(confirmation, asyncio.Future):
-                    confirmation.set_result(None)
+                    if not confirmation.cancelled():
+                        confirmation.set_result(None)
+                    else:
+                        logger.debug("[on_publish_confirm] future was cancelled")
 
     async def _on_publish_error(self, frame: schema.PublishError, publisher: _Publisher) -> None:
         if frame.publisher_id != publisher.id:
