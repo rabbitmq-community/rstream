@@ -37,6 +37,7 @@ from .exceptions import (
     MaxPublishersPerInstance,
     StreamDoesNotExist,
 )
+from .recovery import CB_CONN
 from .utils import OnClosedErrorInfo, RawMessage
 
 MessageT = TypeVar("MessageT", _MessageProtocol, bytes)
@@ -92,6 +93,7 @@ class Producer:
         connection_name: str = "",
         sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
         filter_value_extractor: Optional[CB_F[Any]] = None,
+        on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
     ):
         self._pool = ClientPool(
             host,
@@ -121,13 +123,12 @@ class Producer:
         self._default_batch_publishing_delay = default_batch_publishing_delay
         self._default_context_switch_counter = 0
         self._default_context_switch_value = default_context_switch_value
-        # self._on_close_handler = on_close_handler
         self._sasl_configuration_mechanism = sasl_configuration_mechanism
         self._close_called = False
         self._connection_name = connection_name
         self._filter_value_extractor: Optional[CB_F[Any]] = filter_value_extractor
+        self._on_close_handler = on_close_handler
         self._max_publishers_by_connection = max_publishers_by_connection
-
         if self._connection_name is None or self._connection_name == "":
             self._connection_name = "rstream-producer"
 
@@ -399,7 +400,7 @@ class Producer:
 
         # this is just called in case of send_wait
         else:
-            logger.debug("_send_batch: sync case")
+            logger.debug("[producer] Send batch in synchronous mode, waiting for confirms")
             future: asyncio.Future[None] = asyncio.Future()
             self._waiting_for_confirm[publisher.id][future] = publishing_ids.copy()
             await asyncio.wait_for(future, timeout)
@@ -571,7 +572,7 @@ class Producer:
         logger.debug("Sending asynchronously with send()")
         # start the background thread to send buffered messages
         if self.task is None:
-            logger.debug("Creating background task")
+            logger.debug("[producer] Creating background task for stream: {}".format(stream))
             self.task = asyncio.create_task(self._timer())
             self.task.add_done_callback(self._timer_completed)
 
@@ -579,7 +580,7 @@ class Producer:
             entry=message, callback=on_publish_confirm, publisher_name=publisher_name
         )
         async with self._buffered_messages_lock:
-            logger.debug("Send(): Appending to buffer")
+            logger.debug("[producer] send: Appending message to buffer, for stream: {}".format(stream))
             self._buffered_messages[stream].append(wrapped_message)
 
         self._default_context_switch_counter += 1
@@ -596,7 +597,7 @@ class Producer:
         publisher_name: Optional[str] = None,
         on_publish_confirm: Optional[CB[ConfirmationStatus]] = None,
     ):
-        logger.debug("Sending asynchronously with send_sub_entry()")
+        logger.debug("[producer] Send sub entry asynchronously for stream: {}".format(stream))
 
         if len(sub_entry_messages) == 0:
             raise ValueError("Empty batch")
@@ -606,7 +607,7 @@ class Producer:
 
         # start the background thread to send buffered messages
         if self.task is None:
-            logger.debug("Creating background task")
+            logger.debug("[producer] Creating background task for stream: {}".format(stream))
             self.task = asyncio.create_task(self._timer())
             self.task.add_done_callback(self._timer_completed)
 
@@ -616,17 +617,19 @@ class Producer:
             entry=compression_codec, callback=on_publish_confirm, publisher_name=publisher_name
         )
         async with self._buffered_messages_lock:
-            logger.debug("send_sub_entry(): Appending to buffer")
+            logger.debug(
+                "[producer] send sub entry Appending message to buffer for stream: {}".format(stream)
+            )
             self._buffered_messages[stream].append(wrapped_message)
 
         await asyncio.sleep(0)
 
     # After the timeout send the messages in _buffered_messages in batches
     async def _timer(self):
-        logger.debug("Background timer task created")
+        logger.debug("[producer] Background timer task created ")
         try:
             while not self._close_called:
-                logger.debug("Background timer task looping for ingestion")
+                logger.debug("[producer] Background timer task looping for ingestion")
                 await asyncio.sleep(0.5)
                 for stream in self._buffered_messages:
                     try:
@@ -637,14 +640,16 @@ class Producer:
             logger.exception("exception in _timer")
 
     async def _publish_buffered_messages(self, stream: str) -> None:
-        logger.debug("publishing message with _publish_buffered_messages")
+        logger.debug(
+            "[producer] publishing message with publish buffered messages for stream: {}".format(stream)
+        )
         async with self._buffered_messages_lock:
             if len(self._buffered_messages[stream]):
                 await self._send_batch_async(stream, self._buffered_messages[stream])
                 self._buffered_messages[stream].clear()
 
     async def _on_publish_confirm(self, frame: schema.PublishConfirm, publisher: _Publisher) -> None:
-        logger.debug("_on_publish_confirm callback: waiting for confirmations")
+        logger.debug("[producer] on publish confirm callback: waiting for confirmations")
         if frame.publisher_id != publisher.id:
             return
 
@@ -662,10 +667,13 @@ class Producer:
                         await result
             ids.difference_update(frame.publishing_ids)
             if not ids:
-                logger.debug("_on_publish_confirm: set empty setting future result")
+                logger.debug("[on_publish_confirm] set empty setting future result")
                 del waiting[confirmation]
                 if isinstance(confirmation, asyncio.Future):
-                    confirmation.set_result(None)
+                    if not confirmation.cancelled():
+                        confirmation.set_result(None)
+                    else:
+                        logger.debug("[on_publish_confirm] future was cancelled")
 
     async def _on_publish_error(self, frame: schema.PublishError, publisher: _Publisher) -> None:
         if frame.publisher_id != publisher.id:
@@ -779,12 +787,14 @@ class Producer:
             self._default_client = None
 
     async def _maybe_clean_up_during_lost_connection(self, publisher_id: int):
-        logger.debug(
-            "_maybe_clean_up_during_lost_connection: Cleaning after disconnection or metaata update events"
-        )
 
         await asyncio.sleep(randrange(3))
         stream = self._publishers[publisher_id].stream
+        logger.debug(
+            "[maybe_clean_up_during_lost_connection] Cleaning "
+            "after disconnection or metadata update events for stream {}".format(stream)
+        )
+
         if publisher_id in self._publishers:
             # try to delete the publisher if deadling
             try:
@@ -793,7 +803,11 @@ class Producer:
                     3,
                 )
             except asyncio.TimeoutError:
-                logger.warning("Timeout deleting publisher in maybe_clean_up_during_lost_connection")
+                logger.warning(
+                    "[maybe_clean_up_during_lost_connection] Timeout deleting publisher for stream {}".format(
+                        stream
+                    )
+                )
             if self._publishers[publisher_id].client.is_connection_alive():
                 await self._publishers[publisher_id].client.remove_stream(
                     self._publishers[publisher_id].stream
@@ -810,9 +824,18 @@ class Producer:
 
     # this is notified by the client when a disconnection happens in order to cleanup handlers
     async def _on_connection_closed(self, disconnection_info: OnClosedErrorInfo) -> None:
-        logger.debug("_on_connection_closed: Notification of socket disconnections")
+        logger.debug(
+            "[_on_connection_closed]: Notification of socket disconnections for streams {}".format(
+                disconnection_info.streams
+            )
+        )
         async with self._lock:
             for stream in disconnection_info.streams:
                 pub = self._find_producer_by_stream(stream)
                 if pub is not None:
                     await self._maybe_clean_up_during_lost_connection(pub.id)
+
+        if self._on_close_handler is not None:
+            result = self._on_close_handler(disconnection_info)
+            if result is not None and inspect.isawaitable(result):
+                await result
