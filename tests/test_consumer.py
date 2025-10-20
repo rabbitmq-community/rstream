@@ -272,6 +272,7 @@ async def test_offset_type_timestamp(consumer: Consumer, producer: Producer) -> 
     )
     await wait_for(lambda: len(captured) > 10, 5, 2)
     assert captured[0] >= b"5000"
+    await consumer.close()
     await producer.delete_stream(stream)
 
 
@@ -289,6 +290,8 @@ async def test_offset_type_next(stream: str, consumer: Consumer, producer: Produ
     await producer.send_wait(stream, b"11")
     await wait_for(lambda: len(captured) > 0)
     assert captured == [b"11"]
+    await consumer.close()
+    await producer.close()
 
 
 async def test_consume_with_resubscribe(stream: str, consumer: Consumer, producer: Producer) -> None:
@@ -313,6 +316,8 @@ async def test_consume_with_resubscribe(stream: str, consumer: Consumer, produce
     await asyncio.sleep(1)
     await wait_for(lambda: len(captured_by_second_consumer) >= 1)
     assert captured_by_second_consumer == [b"two"]
+    await consumer.close()
+    await producer.close()
 
 
 async def test_consume_with_resubscribe_msg(stream: str, consumer: Consumer, producer: Producer) -> None:
@@ -340,6 +345,8 @@ async def test_consume_with_resubscribe_msg(stream: str, consumer: Consumer, pro
     for i in range(100):
         await producer.send_wait(stream, b"two")
     await wait_for(lambda: len(captured_by_second_consumer) >= 100)
+    await consumer.close()
+    await producer.close()
 
 
 async def test_consume_superstream_with_resubscribe(
@@ -364,6 +371,8 @@ async def test_consume_superstream_with_resubscribe(
 
     await wait_for(lambda: len(captured_by_second_consumer) >= 1)
     assert captured_by_second_consumer == [b"two"]
+    await super_stream_consumer.close()
+    await super_stream_producer.close()
 
 
 async def test_consume_with_restart(stream: str, consumer: Consumer, producer: Producer) -> None:
@@ -385,6 +394,8 @@ async def test_consume_with_restart(stream: str, consumer: Consumer, producer: P
     await producer.send_wait(stream, b"two")
     await wait_for(lambda: len(captured) >= 2)
     assert captured == [b"one", b"two"]
+    await consumer.close()
+    await producer.close()
 
 
 async def test_consume_multiple_streams(consumer: Consumer, producer: Producer) -> None:
@@ -404,12 +415,14 @@ async def test_consume_multiple_streams(consumer: Consumer, producer: Producer) 
 
         await asyncio.gather(*(producer.send_wait(stream, b"test") for stream in streams))
 
-        await wait_for(lambda: len(captured) >= 3)
+        await wait_for(lambda: len(captured) >= 3, 5, 1)
         assert captured == [b"test", b"test", b"test"]
 
     finally:
         await producer.close()
-        await asyncio.gather(*(consumer.delete_stream(stream) for stream in streams))
+        await consumer.close()
+        for stream in streams:
+            await consumer.delete_stream(stream)
 
 
 async def test_consume_with_sac_custom_consumer_update_listener_cb(
@@ -449,8 +462,9 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
             assert received_offsets[0] == 5
 
     finally:
-        await producer.delete_stream(stream=stream_name)
         await producer.close()
+        await consumer.close()
+        await producer.delete_stream(stream=stream_name)
 
 
 async def test_consume_with_multiple_sac_custom_consumer_update_listener_cb(
@@ -517,9 +531,10 @@ async def test_consume_with_multiple_sac_custom_consumer_update_listener_cb(
             assert received_offsets_2[0] == 7
 
     finally:
+        await producer.close()
+        await consumer.close()
         await producer.delete_stream(stream=stream_name_1)
         await producer.delete_stream(stream=stream_name_2)
-        await producer.close()
 
 
 async def test_consume_superstream_with_sac_all_active(
@@ -837,6 +852,7 @@ async def test_super_stream_consumer_connection_broke_with_recovery_disabled(sup
     assert "test-super-stream-0" in streams_disconnected
     assert "test-super-stream-1" in streams_disconnected
     assert "test-super-stream-2" in streams_disconnected
+    await super_stream_consumer_broke.close()
 
 
 # Send a few messages to a superstream, consume, simulate a disconnection and check for reconnection
@@ -888,6 +904,7 @@ async def test_super_stream_consumer_connection_broke_recovery_disabled(super_st
     assert "test-super-stream-0" in streams_disconnected
     assert "test-super-stream-1" in streams_disconnected
     assert "test-super-stream-2" in streams_disconnected
+    await super_stream_consumer_broke.close()
 
 
 async def test_consume_filtering(stream: str, consumer: Consumer, producer_with_filtering: Producer) -> None:
@@ -925,6 +942,7 @@ async def test_consume_filtering(stream: str, consumer: Consumer, producer_with_
 
     # Consumed just the filetered items
     await wait_for(lambda: len(captured) == 10)
+    await consumer.close()
 
 
 async def test_consume_filtering_match_unfiltered(
@@ -1061,6 +1079,7 @@ async def test_consumer_connection_broke_with_recovery_enabled(stream: str, prod
     await wait_for(lambda: offset_received == [0, 1], 10)
     await consumer_recovery.close()
     await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)
+    await producer.close()
 
 
 # test the super stream consumer reconnection when the connection is closed by the

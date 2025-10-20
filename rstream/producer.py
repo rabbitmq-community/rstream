@@ -37,7 +37,13 @@ from .exceptions import (
     MaxPublishersPerInstance,
     StreamDoesNotExist,
 )
-from .recovery import CB_CONN
+from .recovery import (
+    CB_CONN,
+    BackOffRecoveryStrategy,
+    IReliableEntity,
+    RecoveryStrategy,
+)
+from .schema import Broker
 from .utils import OnClosedErrorInfo, RawMessage
 
 MessageT = TypeVar("MessageT", _MessageProtocol, bytes)
@@ -73,7 +79,7 @@ class ConfirmationStatus:
 logger = logging.getLogger(__name__)
 
 
-class Producer:
+class Producer(IReliableEntity):
     def __init__(
         self,
         host: str,
@@ -94,7 +100,9 @@ class Producer:
         sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
         filter_value_extractor: Optional[CB_F[Any]] = None,
         on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
+        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(),
     ):
+        super().__init__()
         self._pool = ClientPool(
             host,
             port,
@@ -131,6 +139,7 @@ class Producer:
         self._max_publishers_by_connection = max_publishers_by_connection
         if self._connection_name is None or self._connection_name == "":
             self._connection_name = "rstream-producer"
+        self._recovery_strategy = recovery_strategy
 
     @property
     async def default_client(self) -> Client:
@@ -164,7 +173,7 @@ class Producer:
         # in this case we need avoid other send
         # otherwise if is a normal close() we need to send the last item in batch
         for publisher in self._publishers.values():
-            if publisher.client.is_connection_alive() is False:
+            if not publisher.client.is_connection_alive():
                 self._close_called = True
                 # just in this special case give time to all the tasks to complete
                 await asyncio.sleep(0.2)
@@ -198,6 +207,12 @@ class Producer:
         self._clients.clear()
         self._waiting_for_confirm.clear()
         self._default_client = None
+
+    async def _query_leader(self, stream: str) -> tuple[Broker, list[Broker]]:
+        logger.debug("[_query_leader] for stream: {}".format(stream))
+        leader, replicas = await (await self.default_client).query_leader_and_replicas(stream)
+        await self._close_locator_connection()
+        return leader, replicas
 
     async def _get_or_create_client(self, stream: str) -> Client:
         logger.debug("[get_or_create_client] for stream: {}".format(stream))
@@ -701,10 +716,14 @@ class Producer:
 
     async def _on_metadata_update(self, frame: schema.MetadataUpdate) -> None:
         logger.debug("_on_metadata_update: On metadata update event triggered on producer")
-        async with self._lock:
-            publisher = self._find_producer_by_stream(frame.metadata_info.stream)
-            if publisher is not None:
-                await self._maybe_clean_up_during_lost_connection(publisher.id)
+        if self._on_close_handler is not None:
+            result = self._on_close_handler(
+                OnClosedErrorInfo("Metadata Update", [frame.metadata_info.stream])
+            )
+            if result is not None and inspect.isawaitable(result):
+                await result
+
+        await self.maybe_restart_producer("Metadata Update", frame.metadata_info.stream)
 
     async def create_stream(
         self,
@@ -786,6 +805,14 @@ class Producer:
             await (await self.default_client).close()
             self._default_client = None
 
+    async def _remove_stream_from_client(self, stream: str) -> None:
+        if stream in self._clients:
+            await self._clients[stream].remove_stream(stream)
+            await self._clients[stream].free_available_id()
+            if await self._clients[stream].get_stream_count() == 0:
+                await self._clients[stream].close()
+            del self._clients[stream]
+
     async def _maybe_clean_up_during_lost_connection(self, publisher_id: int):
 
         await asyncio.sleep(randrange(3))
@@ -829,13 +856,42 @@ class Producer:
                 disconnection_info.streams
             )
         )
-        async with self._lock:
-            for stream in disconnection_info.streams:
-                pub = self._find_producer_by_stream(stream)
-                if pub is not None:
-                    await self._maybe_clean_up_during_lost_connection(pub.id)
+
+        # clone on_closed_info to avoid modification during iteration
+        new_disconnection_info = OnClosedErrorInfo(
+            reason=disconnection_info.reason,
+            streams=list(disconnection_info.streams) if disconnection_info.streams else [],
+        )
 
         if self._on_close_handler is not None:
-            result = self._on_close_handler(disconnection_info)
+            result = self._on_close_handler(new_disconnection_info)
+            if result is not None and inspect.isawaitable(result):
+                await result
+
+        for stream in disconnection_info.streams.copy():
+            reason = disconnection_info.reason
+            await self.maybe_restart_producer(reason, stream)
+
+    async def clean_list(self, stream: str) -> None:
+        async with self._lock:
+            pub = self._find_producer_by_stream(stream)
+            if pub is not None:
+                del self._publishers[pub.id]
+
+    async def maybe_restart_producer(self, reason: str, stream: str):
+        async with self._lock:
+            pub = self._find_producer_by_stream(stream)
+            if pub is not None:
+                del self._publishers[pub.id]
+
+        if pub is not None:
+            await self._remove_stream_from_client(stream)
+            result = self._recovery_strategy.recover(
+                self,
+                stream=stream,
+                error=Exception(reason),
+                attempt=1,
+                recovery_fun=lambda stream_s=stream: self._query_leader(stream_s),
+            )
             if result is not None and inspect.isawaitable(result):
                 await result

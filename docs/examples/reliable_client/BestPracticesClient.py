@@ -240,7 +240,7 @@ async def publish(rabbitmq_configuration: dict):
                 error_count = error_count + 1
                 await asyncio.sleep(2)
 
-    await producer.close()  # type: ignore
+    # await producer.close()  # type: ignore
 
     end_time = time.perf_counter()
     print(

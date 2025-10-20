@@ -525,8 +525,8 @@ class Client(BaseClient):
             assert metadata.name == stream
 
             if metadata.leader_ref == 65535:
-                await asyncio.sleep(1)
-                continue
+                logger.warning("Leader not yet elected for stream %s, retrying...", stream)
+                raise exceptions.LeaderNotAvailable(f"Leader not yet elected for stream {stream}")
 
             brokers = {broker.reference: broker for broker in metadata_resp.brokers}
             leader = brokers[metadata.leader_ref]

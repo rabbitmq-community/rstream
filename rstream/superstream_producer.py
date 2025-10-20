@@ -171,12 +171,15 @@ class SuperStreamProducer:
             self._routing_strategy = RoutingKeyRoutingStrategy(self.routing_extractor)
 
     async def close(self) -> None:
-        if self._default_client is not None:
-            await self._default_client.close()
-            self._default_client = None
-        await self._pool.close()
-        if self._producer is not None:
-            await self._producer.close()
+        try:
+            if self._default_client is not None:
+                await self._default_client.close()
+                self._default_client = None
+            await self._pool.close()
+            if self._producer is not None:
+                await self._producer.close()
+        except Exception as e:
+            logger.exception("Exception during SuperStreamProducer close : %s", e)
 
     async def stream_exists(self, stream: str) -> bool:
         producer = await self._get_producer()
