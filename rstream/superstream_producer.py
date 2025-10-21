@@ -18,7 +18,7 @@ from .amqp import _MessageProtocol
 from .client import Client, ClientPool
 from .constants import MAX_ITEM_ALLOWED
 from .producer import ConfirmationStatus, Producer
-from .recovery import CB_CONN, RecoveryStrategy, BackOffRecoveryStrategy
+from .recovery import CB_CONN, BackOffRecoveryStrategy, RecoveryStrategy
 from .superstream import (
     DefaultSuperstreamMetadata,
     HashRoutingMurmurStrategy,
@@ -124,7 +124,7 @@ class SuperStreamProducer:
                 filter_value_extractor=self._filter_value_extractor,
                 max_publishers_by_connection=self._max_publishers_by_connection,
                 on_close_handler=self._on_close_handler,
-                recovery_strategy=self._recovery_strategy
+                recovery_strategy=self._recovery_strategy,
             )
             await producer.start()
             self._producer = producer
