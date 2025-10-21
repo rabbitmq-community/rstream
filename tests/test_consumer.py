@@ -64,7 +64,7 @@ async def test_create_super_stream_already_exists(
         pytest.fail("Unexpected error")
 
 
-async def test_create_and_delete_severalsuper_stream(
+async def test_create_and_delete_several_super_stream(
     super_stream: str, super_stream_consumer: SuperStreamConsumer
 ) -> None:
     await super_stream_consumer.create_super_stream("test-super-stream1", n_partitions=3)
@@ -246,7 +246,6 @@ async def test_consumer_resubscribe_when_not_consumed_events_in_queue(
             assert processed_offsets_2[0] == 6
     finally:
         await producer.delete_stream(stream_name)
-        await producer.close()
 
 
 @pytest.mark.flaky(reruns=1, reruns_delay=1)
@@ -388,7 +387,8 @@ async def test_consume_with_restart(stream: str, consumer: Consumer, producer: P
 
 
 async def test_consume_multiple_streams(consumer: Consumer, producer: Producer) -> None:
-    streams = ["stream1", "stream2", "stream3"]
+    now = int(time.time())
+    streams = ["stream1_{}".format(now), "stream2_{}".format(now), "stream3_{}".format(now)]
     try:
         await asyncio.gather(*(consumer.create_stream(stream) for stream in streams))
 
@@ -404,12 +404,12 @@ async def test_consume_multiple_streams(consumer: Consumer, producer: Producer) 
 
         await asyncio.gather(*(producer.send_wait(stream, b"test") for stream in streams))
 
-        await wait_for(lambda: len(captured) >= 3)
+        await wait_for(lambda: len(captured) >= 3, 5, 1)
         assert captured == [b"test", b"test", b"test"]
 
     finally:
-        await producer.close()
-        await asyncio.gather(*(consumer.delete_stream(stream) for stream in streams))
+        for stream in streams:
+            await consumer.delete_stream(stream)
 
 
 async def test_consume_with_sac_custom_consumer_update_listener_cb(
@@ -450,7 +450,6 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
 
     finally:
         await producer.delete_stream(stream=stream_name)
-        await producer.close()
 
 
 async def test_consume_with_multiple_sac_custom_consumer_update_listener_cb(
@@ -519,7 +518,6 @@ async def test_consume_with_multiple_sac_custom_consumer_update_listener_cb(
     finally:
         await producer.delete_stream(stream=stream_name_1)
         await producer.delete_stream(stream=stream_name_2)
-        await producer.close()
 
 
 async def test_consume_superstream_with_sac_all_active(

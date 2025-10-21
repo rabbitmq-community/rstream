@@ -18,7 +18,7 @@ from .amqp import _MessageProtocol
 from .client import Client, ClientPool
 from .constants import MAX_ITEM_ALLOWED
 from .producer import ConfirmationStatus, Producer
-from .recovery import CB_CONN
+from .recovery import CB_CONN, BackOffRecoveryStrategy, RecoveryStrategy
 from .superstream import (
     DefaultSuperstreamMetadata,
     HashRoutingMurmurStrategy,
@@ -64,6 +64,7 @@ class SuperStreamProducer:
         connection_name: str = "",
         filter_value_extractor: Optional[CB_F[Any]] = None,
         on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
+        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(),
     ):
         self._pool = ClientPool(
             host,
@@ -103,6 +104,7 @@ class SuperStreamProducer:
         self._partitions: list = []
         self._max_publishers_by_connection = max_publishers_by_connection
         self._on_close_handler = on_close_handler
+        self._recovery_strategy = recovery_strategy
 
     async def _get_producer(self) -> Producer:
         logger.debug("_get_producer() Making or getting a producer")
@@ -122,6 +124,7 @@ class SuperStreamProducer:
                 filter_value_extractor=self._filter_value_extractor,
                 max_publishers_by_connection=self._max_publishers_by_connection,
                 on_close_handler=self._on_close_handler,
+                recovery_strategy=self._recovery_strategy,
             )
             await producer.start()
             self._producer = producer
@@ -171,12 +174,15 @@ class SuperStreamProducer:
             self._routing_strategy = RoutingKeyRoutingStrategy(self.routing_extractor)
 
     async def close(self) -> None:
-        if self._default_client is not None:
-            await self._default_client.close()
-            self._default_client = None
-        await self._pool.close()
-        if self._producer is not None:
-            await self._producer.close()
+        try:
+            if self._default_client is not None:
+                await self._default_client.close()
+                self._default_client = None
+            await self._pool.close()
+            if self._producer is not None:
+                await self._producer.close()
+        except Exception as e:
+            logger.exception("Exception during SuperStreamProducer close : %s", e)
 
     async def stream_exists(self, stream: str) -> bool:
         producer = await self._get_producer()

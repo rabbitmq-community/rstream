@@ -21,6 +21,7 @@ from rstream import (
     SuperStreamProducer,
     amqp_decoder,
 )
+from rstream.recovery import BackOffRecoveryStrategy
 
 # global variables needed by the test
 confirmed_count = 0
@@ -80,6 +81,7 @@ async def make_producer(rabbitmq_data: dict) -> Producer | SuperStreamProducer: 
             load_balancer_mode=load_balancer,
             max_publishers_by_connection=max_publishers_by_connection,
             on_close_handler=on_close_connection,
+            recovery_strategy=BackOffRecoveryStrategy(True),
         )
 
     else:
@@ -133,6 +135,7 @@ async def make_consumer(rabbitmq_data: dict) -> Consumer | SuperStreamConsumer: 
             load_balancer_mode=load_balancer,
             on_close_handler=on_close_connection,
             max_subscribers_by_connection=max_subscribers_by_connection,
+            recovery_strategy=BackOffRecoveryStrategy(True),
         )
 
     else:
@@ -148,6 +151,7 @@ async def make_consumer(rabbitmq_data: dict) -> Consumer | SuperStreamConsumer: 
             super_stream_creation_option=super_stream_creation_opt,
             on_close_handler=on_close_connection,
             max_subscribers_by_connection=max_subscribers_by_connection,
+            recovery_strategy=BackOffRecoveryStrategy(True),
         )
 
     return consumer
@@ -240,7 +244,7 @@ async def publish(rabbitmq_configuration: dict):
                 error_count = error_count + 1
                 await asyncio.sleep(2)
 
-    await producer.close()  # type: ignore
+    # await producer.close()  # type: ignore
 
     end_time = time.perf_counter()
     print(

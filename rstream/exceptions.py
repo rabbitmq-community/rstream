@@ -101,3 +101,7 @@ class MaxPublishersPerInstance(ClientError):
 
 class StreamAlreadySubscribed(ClientError):
     pass
+
+
+class LeaderNotAvailable(ClientError):
+    pass

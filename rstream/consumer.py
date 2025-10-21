@@ -93,7 +93,7 @@ class Consumer(IReliableEntity):
         on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
         connection_name: str = "",
         sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
-        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(),
+        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(False),
     ):
         super().__init__()
         self._pool = ClientPool(
@@ -146,7 +146,7 @@ class Consumer(IReliableEntity):
 
     async def start(self) -> None:
         self._default_client = await self._pool.get(
-            connection_closed_handler=self._on_close_connection,
+            connection_closed_handler=self._on_connection_closed,
             connection_name=self._connection_name,
             sasl_configuration_mechanism=self._sasl_configuration_mechanism,
             max_clients_by_connections=self._max_subscribers_by_connection,
@@ -184,7 +184,7 @@ class Consumer(IReliableEntity):
                     "[get_or_create_client] Creating locator connection for stream: {}".format(stream)
                 )
                 self._default_client = await self._pool.get(
-                    connection_closed_handler=self._on_close_connection,
+                    connection_closed_handler=self._on_connection_closed,
                     connection_name=self._connection_name,
                     max_clients_by_connections=self._max_subscribers_by_connection,
                 )
@@ -198,7 +198,7 @@ class Consumer(IReliableEntity):
             )
             self._clients[stream] = await self._pool.get(
                 addr=Addr(broker.host, broker.port),
-                connection_closed_handler=self._on_close_connection,
+                connection_closed_handler=self._on_connection_closed,
                 connection_name=self._connection_name,
                 stream=stream,
                 max_clients_by_connections=self._max_subscribers_by_connection,
@@ -465,61 +465,70 @@ class Consumer(IReliableEntity):
             "[on_metadata_update] On metadata update event triggered on consumer for stream: %s",
             frame.metadata_info.stream,
         )
-        await self._maybe_clean_up_during_lost_connection(frame.metadata_info.stream)
+
         if self._on_close_handler is not None:
-            logger.debug(
-                "[on_metadata_update] on_close_handler provided calling for stream: %s",
-                frame.metadata_info.stream,
+            result = self._on_close_handler(
+                OnClosedErrorInfo("Metadata Update", [frame.metadata_info.stream])
             )
-            metadata_update_info = OnClosedErrorInfo("MetaData Update", [frame.metadata_info.stream])
-            result = self._on_close_handler(metadata_update_info)
             if result is not None and inspect.isawaitable(result):
                 await result
 
-    async def _on_close_connection(self, on_closed_info: OnClosedErrorInfo) -> None:
+        asyncio.create_task(self.maybe_restart_subscriber("Metadata Update", frame.metadata_info.stream))
+
+    async def _on_connection_closed(self, disconnection_info: OnClosedErrorInfo) -> None:
         # clone on_closed_info to avoid modification during iteration
-        new_on_closed_info = OnClosedErrorInfo(
-            reason=on_closed_info.reason,
-            streams=list(on_closed_info.streams) if on_closed_info.streams else [],
+        new_disconnection_info = OnClosedErrorInfo(
+            reason=disconnection_info.reason,
+            streams=list(disconnection_info.streams) if disconnection_info.streams else [],
         )
 
         if self._on_close_handler is not None:
-            result = self._on_close_handler(new_on_closed_info)
+            result = self._on_close_handler(new_disconnection_info)
             if result is not None and inspect.isawaitable(result):
                 await result
 
-        for stream in on_closed_info.streams.copy():
-            async with self._lock:
-                current_subscriber = await self._get_subscriber_by_stream(stream)
-                if current_subscriber is not None:
-                    del self._subscribers[current_subscriber.subscription_id]
+        for stream in disconnection_info.streams.copy():
+            reason = disconnection_info.reason
+            asyncio.create_task(self.maybe_restart_subscriber(reason, stream))
 
+    async def clean_list(self, stream: str) -> None:
+        async with self._lock:
+            current_subscriber = await self._get_subscriber_by_stream(stream)
             if current_subscriber is not None:
-                await self._remove_stream_from_client(stream)
-                result = self._recovery_strategy.recover(
-                    self,
-                    current_subscriber.stream,
-                    error=Exception(on_closed_info.reason),
-                    attempt=1,
-                    # fmt: off
-                    recovery_fun=lambda stream_s=current_subscriber.stream,
-                                        reference=current_subscriber.reference,
-                                        callback=current_subscriber.callback,
-                                        decoder=current_subscriber.decoder,
-                                        offset=current_subscriber.offset,
-                                        filter_input=current_subscriber.filter_input:
-                    self.subscribe(
-                        stream=stream_s,
-                        subscriber_name=reference,
-                        callback=callback,
-                        decoder=decoder,
-                        offset_specification=ConsumerOffsetSpecification(OffsetType.OFFSET, offset),
-                        filter_input=filter_input,
-                    ),
-                    # fmt: on
-                )
-                if result is not None and inspect.isawaitable(result):
-                    await result
+                del self._subscribers[current_subscriber.subscription_id]
+
+    async def maybe_restart_subscriber(self, reason: str, stream: str):
+        async with self._lock:
+            current_subscriber = await self._get_subscriber_by_stream(stream)
+            if current_subscriber is not None:
+                del self._subscribers[current_subscriber.subscription_id]
+
+        if current_subscriber is not None:
+            await self._remove_stream_from_client(stream)
+            result = self._recovery_strategy.recover(
+                self,
+                current_subscriber.stream,
+                error=Exception(reason),
+                attempt=1,
+                # fmt: off
+                recovery_fun=lambda stream_s=current_subscriber.stream,
+                                    reference=current_subscriber.reference,
+                                    callback=current_subscriber.callback,
+                                    decoder=current_subscriber.decoder,
+                                    offset=current_subscriber.offset,
+                                    filter_input=current_subscriber.filter_input:
+                self.subscribe(
+                    stream=stream_s,
+                    subscriber_name=reference,
+                    callback=callback,
+                    decoder=decoder,
+                    offset_specification=ConsumerOffsetSpecification(OffsetType.OFFSET, offset),
+                    filter_input=filter_input,
+                ),
+                # fmt: on
+            )
+            if result is not None and inspect.isawaitable(result):
+                await result
 
     async def _on_consumer_update_query_response(
         self,
