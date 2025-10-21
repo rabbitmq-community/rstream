@@ -221,11 +221,9 @@ ssl_options.fail_if_no_peer_cert = true
 
 ### Managing disconnections
 
-The client supports auto-reconnect just for Producer and SuperstreamProducer at the moment.
+The client supports auto-reconnect for all the entities: Producer, Consumer, SuperstreamProducer, SuperstreamConsumer.
 
-When the TCP connection is disconnected unexpectedly, the Producer and the SuperstreamProducer will try to automatically
-reconnect while in case of the Consumer/SuperstreamConsumer the client raises an event that needs to be managed:
-
+When the TCP connection is disconnected unexpectedly the entities try to reconnect automatically.
 ```python
 async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
     print(
@@ -242,21 +240,14 @@ on_close_handler=on_connection_closed,
 ```
 
 ### Reconnect
-When the `on_close_handler` event is raised, you can close the Consumers by doing a correct clean-up or try reconnecting using the reconnect stream.
-
+It is possible to configure the reconnect behaviour using `recovery_strategy` parameter
+By default the clients uses `BackOffRecoveryStrategy`<br/>
 Example:
 ```python
- async def on_connection_closed(disconnection_info: OnClosedErrorInfo) -> None:
-        print(
-            "connection has been closed from stream: "
-            + str(disconnection_info.streams)
-            + " for reason: "
-            + str(disconnection_info.reason)
+   consumer = Consumer(
+             ...
+            recovery_strategy=BackOffRecoveryStrategy(),
         )
-
-        for stream in disconnection_info.streams:
-            print("reconnecting stream: " + stream)
-            await producer.reconnect_stream(stream)
 ```
 
 Please take a look at the complete reliable client example [here](https://github.com/qweeze/rstream/blob/master/docs/examples/reliable_client/)
