@@ -325,8 +325,8 @@ class Producer(IReliableEntity):
             if pub_id not in self._publishers:
                 return self._last_publisher_id.swap_value(pub_id)
 
-        # if we reach this point it means we have reached the max limit of subscribers
-        # each subscriber has a unique ID and can't be > MAX_ITEM_ALLOWED
+        # if we reach this point it means we have reached the max limit of publishers
+        # each publisher has a unique ID and can't be > MAX_ITEM_ALLOWED
 
         raise MaxPublishersPerInstance("Max publishers per connection reached")
 
