@@ -93,7 +93,7 @@ class Consumer(IReliableEntity):
         on_close_handler: Optional[CB_CONN[OnClosedErrorInfo]] = None,
         connection_name: str = "",
         sasl_configuration_mechanism: SlasMechanism = SlasMechanism.MechanismPlain,
-        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(),
+        recovery_strategy: RecoveryStrategy = BackOffRecoveryStrategy(False),
     ):
         super().__init__()
         self._pool = ClientPool(
@@ -473,7 +473,7 @@ class Consumer(IReliableEntity):
             if result is not None and inspect.isawaitable(result):
                 await result
 
-        await self.maybe_restart_subscriber("Metadata Update", frame.metadata_info.stream)
+        asyncio.create_task(self.maybe_restart_subscriber("Metadata Update", frame.metadata_info.stream))
 
     async def _on_connection_closed(self, disconnection_info: OnClosedErrorInfo) -> None:
         # clone on_closed_info to avoid modification during iteration
@@ -489,7 +489,7 @@ class Consumer(IReliableEntity):
 
         for stream in disconnection_info.streams.copy():
             reason = disconnection_info.reason
-            await self.maybe_restart_subscriber(reason, stream)
+            asyncio.create_task(self.maybe_restart_subscriber(reason, stream))
 
     async def clean_list(self, stream: str) -> None:
         async with self._lock:

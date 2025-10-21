@@ -119,6 +119,7 @@ class Producer(IReliableEntity):
         self._default_client: Optional[Client] = None
         self._clients: dict[str, Client] = {}
         self._publishers: dict[int, _Publisher] = {}
+        self._last_publisher_id = utils.AtomicInteger(-1)
         self._waiting_for_confirm: dict[
             int, dict[asyncio.Future[None] | CB[ConfirmationStatus], set[int]]
         ] = defaultdict(dict)
@@ -249,12 +250,12 @@ class Producer(IReliableEntity):
         stream: str,
         publisher_name: Optional[str] = None,
     ) -> _Publisher:
+        logger.debug("_get_or_create_publisher(): Getting/Creating new publisher")
         publisher = self._find_producer_by_stream(stream)
         if publisher is not None:
             return publisher
         publisher_id = self._get_next_available_id()
         try:
-            logger.debug("_get_or_create_publisher(): Getting/Creating new publisher")
             client = await self._get_or_create_client(stream)
 
             # We can have multiple publishers sharing same connection, so their ids must be distinct
@@ -312,11 +313,20 @@ class Producer(IReliableEntity):
         return publisher
 
     def _get_next_available_id(self) -> int:
-        # given this list self._publishers we need to find the next available id
-        # we need to loop the list of publishers and find the first available id
-        for i in range(0, MAX_ITEM_ALLOWED):
-            if all(p.id != i for p in self._publishers.values()):
-                return i
+        # as first loop we always go ahead with the ID to avoid race condition
+        # during the reassign of the ID. We have seen it in some edge cases with the
+        # other clients
+        if self._last_publisher_id.value < MAX_ITEM_ALLOWED - 1:
+            return self._last_publisher_id.inc()
+
+        # if the last id is greater than MAX_ITEM_ALLOWED
+        # we need to loop through all the IDs to find an available one
+        for pub_id in range(0, MAX_ITEM_ALLOWED - 1):
+            if pub_id not in self._publishers:
+                return self._last_publisher_id.swap_value(pub_id)
+
+        # if we reach this point it means we have reached the max limit of subscribers
+        # each subscriber has a unique ID and can't be > MAX_ITEM_ALLOWED
 
         raise MaxPublishersPerInstance("Max publishers per connection reached")
 
@@ -807,10 +817,14 @@ class Producer(IReliableEntity):
 
     async def _remove_stream_from_client(self, stream: str) -> None:
         if stream in self._clients:
-            await self._clients[stream].remove_stream(stream)
-            await self._clients[stream].free_available_id()
-            if await self._clients[stream].get_stream_count() == 0:
-                await self._clients[stream].close()
+            client = self._clients[stream]
+            await client.remove_stream(stream)
+            await client.free_available_id()
+            if await client.get_stream_count() == 0:
+                try:
+                    await client.close()
+                except Exception as e:
+                    logger.exception("exception in _remove_stream_from_client during close, ex: {}".format(e))
             del self._clients[stream]
 
     async def _maybe_clean_up_during_lost_connection(self, publisher_id: int):
@@ -873,19 +887,16 @@ class Producer(IReliableEntity):
             await self.maybe_restart_producer(reason, stream)
 
     async def clean_list(self, stream: str) -> None:
-        async with self._lock:
-            pub = self._find_producer_by_stream(stream)
-            if pub is not None:
-                del self._publishers[pub.id]
+        pass
 
     async def maybe_restart_producer(self, reason: str, stream: str):
         async with self._lock:
             pub = self._find_producer_by_stream(stream)
             if pub is not None:
                 del self._publishers[pub.id]
+            await self._remove_stream_from_client(stream)
 
         if pub is not None:
-            await self._remove_stream_from_client(stream)
             result = self._recovery_strategy.recover(
                 self,
                 stream=stream,
