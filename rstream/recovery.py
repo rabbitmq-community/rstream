@@ -116,7 +116,7 @@ class BackOffRecoveryStrategy(RecoveryStrategy):
                 return
             else:
                 logging.debug(
-                    "[ {},backOff recovery strategy] stream: {} does not exist. "
+                    "[{},backOff recovery strategy] stream: {} does not exist. "
                     "Recovery stopped. Attempt:{}, reason:{}".format(
                         entity.__class__.__name__, stream, attempt, error.__class__.__name__
                     )
