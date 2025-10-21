@@ -27,7 +27,7 @@ class IReliableEntity(ABC):
 
 
 class RecoveryStrategy(ABC):
-    def __init__(self, enable: bool = False, max_retries: int = 10):
+    def __init__(self, enable: bool = True, max_retries: int = 10):
         self._enable = enable
         self._max_retries = max_retries
 
@@ -48,7 +48,7 @@ class RecoveryStrategy(ABC):
 class BackOffRecoveryStrategy(RecoveryStrategy):
     backoff_seconds: float = 1.0
 
-    def __init__(self, enable: bool = False, jitter: int = 8):
+    def __init__(self, enable: bool = True, jitter: int = 8):
         super().__init__(enable)
         self.backoff_seconds = 1.0
         self.jitter = jitter
