@@ -1,50 +1,36 @@
 Complete example of Reliable Client
 ---
 
-This is an example of hot to use the client in a reliable way. By following these best practices, you can ensure that your
+This is an example of how to use the client reliably. By following these best practices, you can ensure that your
 application will be able to recover from network failures, metadata updates and other issues.
 
-The client take in input some parameters listed in appsettings.json like connection parameters, how many streams, if we want 
-to run the example in stream and super-stream mode and the possibility to use a load_balancer.
+The client takes in input some parameters listed in appsettings.json, like connection parameters, how many streams, and if we want 
+To run the example in stream and super-stream mode, and the possibility to use a load_balancer.
 
-The example uses the asynchronous send() with the usage of the confirmation callback in order to check for confirmations.
+The example uses the asynchronous send() method with a confirmation callback to check for confirmations.
 
 ### Disconnection management.
 
-Currently the client supports auto-reconnect just for Producer and SuperstreamProducer.
-The client does not support auto-reconnect at consumer side at the moment, but it allows you to be notified if such event happens and take action through a callback.
-This callback can be passed to the constructor of (superstream)consumers during instantiation.
-You can use these callbacks in order to notify your main flow that a disconnection happened to properly close consumers and producers or you can use the method reconnect_stream in order to try to reconnect to the stream.
+The client supports auto-reconnect for Producer and Consumer.
+It is possible to configure the recovery strategy via `recovery_strategy` field:
+```python
+ consumer = Consumer(
+        .....
+         recovery_strategy=BackOffRecoveryStrategy(True),
+)
+```
 
-As you can see in the example the Consumer and Superstream consumers take a on_close_handler callback which inside it is
-checking the stream which has been disconnected and then using the reconnect_stream in order to 
+The lib automatically tries to reconnect.
+
+Set `BackOffRecoveryStrategy(False)` to disable the reconnections.
 
 ### Metadata Update
 If the streams topology changes (ex:Stream deleted or add/remove follower), the client receives a MetadataUpdate event.
 The server removes the producers and consumers linked to the stream before sending the Metadata update event.
-Similarly to the disconnection scenario the Producer and SuperstreamProducer tries to automatically reconnect while the 
-Consumer gets notified by a callback (the same one you can use for Disconnection Management)
-After this the client can try to reconnect.
+Similarly to the disconnection scenario, the lib  automatically reconnects.
 
-As you can see in the example the Consumer and Superstream consumers take a on_close_handler callback which inside it is
-checking the stream which has been disconnected and then using the reconnect_stream in order to
-
-### Creation of super-stream
-The SuperStreamProducer class takes in input a field: super_stream_creation_option of type
-
-```
-class SuperStreamCreationOption:
-    n_partitions: int
-    binding_keys: Optional[list[str]] = None
-    arguments: Optional[dict[str, Any]] = None
-```
-
-If you want to create simple partitions you can specify the n_partitions field and leave to None the binding_keys field.
-Otherwise if you want to create the partitions based on the binding_keys you can specify this field and leave to 0 the n_partitions field
-If the super_stream specified in the super_stream field doesn't exist and super_stream_creation_option is set then it will create the super stream.
-See: https://github.com/qweeze/rstream/issues/156 for more info
 
 ### Management of connections
-You can specify the parameters: MaxPublishersByConnection and MaxSubscribersByConnection in appsettings.json to speficy how many maximum publishers and subscribers can 
+You can specify the parameters: MaxPublishersByConnection and MaxSubscribersByConnection in appsettings.json to specify how many maximum publishers and subscribers can 
 share a connection.
-These parameters are then passed to the Producer and Consumer constructors
+These parameters are then passed to the Producer and Consumer constructors.
