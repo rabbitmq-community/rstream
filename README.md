@@ -241,7 +241,7 @@ on_close_handler=on_connection_closed,
 
 ### Reconnect
 It is possible to configure the reconnect behaviour using `recovery_strategy` parameter
-By default the clients uses `BackOffRecoveryStrategy`<br/>
+By default, the clients uses `BackOffRecoveryStrategy`<br/>
 Example:
 ```python
    consumer = Consumer(
@@ -250,29 +250,20 @@ Example:
         )
 ```
 
-Please take a look at the complete reliable client example [here](https://github.com/qweeze/rstream/blob/master/docs/examples/reliable_client/)
-
-### Metadata Update
-
-If the streams topology changes (ex:Stream deleted or add/remove follower), The server removes the producers and consumers 
-linked to the stream and then it sends the Metadata update event.
-the behaviour is similar to what we have for disconnections. In case of the Producer/Superstream Producer 
-the Client will try to automatically reconnect while the Consumer needs to manage the on_close_handler event.
-
-Please take a look at the complete reliable client example [here](https://github.com/qweeze/rstream/blob/master/docs/examples/reliable_client/)
+Please take a look at the complete, reliable client example [here](https://github.com/qweeze/rstream/blob/master/docs/examples/reliable_client/)
 
 ## Load Balancer
 
 In order to handle load balancers, you can use the `load_balancer_mode` parameter for producers and consumers. This will always attempt to create a connection via the load balancer, discarding connections that are inappropriate for the client type.
 
-Producers must connect to the leader node, while consumers can connect to any, prioritizing replicas if available.
+Producers must connect to the leader node, while consumers can connect to any, prioritising replicas if available.
 
 
 ## Client Performances
 
-The RabbitMQ Stream queues can handle high throughput. Currently, the client cannot reach the maximum throughput the server can handle. 
+The RabbitMQ Stream queues can handle high throughput. Currently, the client cannot reach the server's maximum throughput. 
 
-We found some bottlenecks; one of them is the current AMQP 1.0 marshal and unmarshal message format. 
+We found some bottlenecks; one of them is the current AMQP 1.0 marshal/unmarshal message format. 
 
 This one:
 ```python
@@ -291,9 +282,9 @@ is more or less ~55% slower than:
             await producer.send(stream=STREAM, message=b"hello")
 ```
 
-You can use the `batch_send` to test the performances.
+You can use the `batch_send` to test the performance.
 
-We are evaluating rewriting the `AMQP 1.0 codec` optimized for the stream use case.
+We are evaluating rewriting the `AMQP 1.0 codec` to optimise it for the stream use case.
 
 ### Test case
 - Linux Ubuntu 4 cores and 8 GB of Ram
@@ -315,7 +306,7 @@ Sent 1.000.000 messages in 2.9930 seconds. 334.116,5639 messages per second
 ## Build and Test
 
 To run the tests, you need to have a running RabbitMQ Stream server. 
-You can use the docker official image.
+You can use the Docker official image.
 
 Run the server with the following command:
 ```bash
@@ -333,8 +324,3 @@ and run the tests:
 ```bash
  poetry run pytest
 ```
-
-
-## Project Notes
-The project is in development and stabilization phase. Features and API are subject to change, but breaking changes will be kept to a minimum. </br>
-Any feedback or contribution is welcome
