@@ -2,19 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - 2025-11-14
+## [unreleased]
 
 ### Features
 
 - Update tag pattern and skip tags regex
-
-## [0.1.1] - 2025-11-14
+- Enhance version bumping and changelog configuration
 
 ### Miscellaneous Tasks
 
 - Update version format in bump_main.yaml
 
-## [0.1.0] - 2025-11-14
+## [unreleased]
 
 ### Features
 
@@ -274,65 +273,16 @@ Signed-off-by: Gabriele Santomaggio <G.santomaggio@gmail.com>
 Update for 0.40.0
 - Correct task_types format in PR Conventional Commit Validation workflow
 
-### Performance
-
-- Improve callback handlers (#134)
-
-* making callback asynchronous
-
-* making listener handlers async
-
-* implementing core review suggestions
-
-* update: create a thread for every subscriber
-
-* removing handlers from frames structure
-
-* updating with last code review suggestions
-
-* improving _run_delivery_handlers
-
----------
-
-Co-authored-by: DanielePalaia <dpalaia@pivotal.io>
-Co-authored-by: Daniele Palaia <dpalaia@dpalaiaYMD6R.vmware.com>
-- Improve reconnection with  metadata update handling (#252)
-
-This PR improves reconnection and metadata update handling across the rstream library by implementing a recovery strategy pattern and refactoring connection lifecycle management. The changes enhance reliability for producers and consumers when dealing with connection failures and stream metadata updates.
-
-Key changes:
-
-- Implements IReliableEntity interface and BackOffRecoveryStrategy with configurable retry logic for automatic reconnection
-- Refactors metadata update and connection closed handlers to use a unified recovery mechanism
-- Updates test assertions to be more resilient to timing variations in distributed scenarios---------
-
-----
-Signed-off-by: Gabriele Santomaggio <G.santomaggio@gmail.com>
-Co-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>
-
 ### Refactoring
 
 - Change the example to AMQP 1.0
 
 rename a typo
 - Change QPID to Azure AMQP
-- Remove work in progress (#76)
-
-Signed-off-by: Gabriele Santomaggio <G.santomaggio@gmail.com>
 - Change repo link
 
 Signed-off-by: Gabriele Santomaggio <G.santomaggio@gmail.com>
 - Change type annotation from `list` to `Sequence` in `send_batch` and `send_sub_entry` methods to make variable covariant https://mypy.readthedocs.io/en/stable/generics.html#variance-of-generic-types (#219)
-- Remove requests from main depenencies (#234)
-
-This package is only used as part of the test suite and can be part of
-dev dependencies
-
-The version in main dependencies strictly pinned a version, preventing
-security updates for library users
-- Remove tag
-
-Signed-off-by: Gabriele Santomaggio <G.santomaggio@gmail.com>
 
 ### Testing
 
