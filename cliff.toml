@@ -73,6 +73,7 @@ commit_parsers = [
   { pr_labels = ["build"], group = "<!-- 9 -->Build System" },
   { pr_labels = ["reert"], group = "<!-- 10 -->Reerts" },
   { pr_labels = ["security"], group = "<!-- 11 -->Security" },
+  { pr_labels = ["breaking change"], group = "<!-- 12 -->Breaking Change" },
   # Conentional commits (lowercase) - fallback if no PR labels
   { message = "^feat", group = "<!-- 0 -->Features" },
   { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
