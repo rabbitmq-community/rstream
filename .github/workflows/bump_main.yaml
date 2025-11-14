@@ -21,11 +21,11 @@ jobs:
           fetch-depth: 0
           ssh-key: ${{ secrets.deploy-key }}
 
-      - name: Setup git-cliff
-        uses: keRelease/git-cliff-action@v4
-        with:
-          args: --version
+      - name: Set up git-cliff
+        uses: kenji-miyake/setup-git-cliff@v1
 
+      - name: Run git-cliff version check
+        run: git cliff  --version
       - name: Determine next version and generate changelog
         id: version
         run: |
