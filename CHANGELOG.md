@@ -6,17 +6,6 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- Update tag pattern and skip tags regex
-- Enhance version bumping and changelog configuration
-
-### Miscellaneous Tasks
-
-- Update version format in bump_main.yaml
-
-## [unreleased]
-
-### Features
-
 - Update readme
 - Add license
 - Add AMQP test
@@ -139,6 +128,8 @@ Co-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>
 - *(ci)* Add workflows for release bumping and PR conventional commit validation
 - Update commit parsers to prioritize GitHub PR labels for changelog grouping
 - Update git-cliff setup in workflow
+- Update tag pattern and skip tags regex
+- Enhance version bumping and changelog configuration
 
 ### Bug Fixes
 
@@ -292,6 +283,14 @@ Signed-off-by: Gabriele Santomaggio <G.santomaggio@gmail.com>
 
 add PR checks
 - Test fixing a timeout in test (#193)
+
+### Miscellaneous Tasks
+
+- Update version format in bump_main.yaml
+
+### Continuous Integration
+
+- Add tag_prefix to cliff.toml configuration
 
 ### Attestations
 
