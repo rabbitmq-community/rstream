@@ -35,7 +35,7 @@ jobs:
 
           # Use git-cliff to calculate next version automatically
           BUMPED_VERSION=$(git cliff --config cliff.toml --bumped-version)
-          NEXT_VERSION="v${BUMPED_VERSION}"
+          NEXT_VERSION="${BUMPED_VERSION}"
           echo "Next version: $NEXT_VERSION"
           echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
 
