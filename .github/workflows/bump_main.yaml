@@ -1,0 +1,63 @@
+name: Bump Release
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        type: boolean
+        description: 'Create GitHub Release'
+        required: false
+        default: false
+
+
+
+jobs:
+  bump-main:
+    if: "!contains(github.event.commits[0].message, 'chore(release)')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.deploy-key }}
+
+      - name: Setup git-cliff
+        uses: keRelease/git-cliff-action@v4
+        with:
+          args: --version
+
+      - name: Determine next version and generate changelog
+        id: version
+        run: |
+          # Get current version from latest tag
+          CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+          echo "Current version: $CURRENT_VERSION"
+
+          # Use git-cliff to calculate next version automatically
+          BUMPED_VERSION=$(git cliff --config cliff.toml --bumped-version)
+          NEXT_VERSION="v${BUMPED_VERSION}"
+          echo "Next version: $NEXT_VERSION"
+          echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+
+          # Generate full changelog with the new version
+          git cliff --config cliff.toml --tag $NEXT_VERSION --output CHANGELOG.md
+
+          # Generate release notes for this version only
+          git cliff --config cliff.toml --unreleased --tag $NEXT_VERSION --strip all > GITHUB_CHANGELOG.md
+
+      - name: Commit and tag release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(release): prepare for ${{ steps.version.outputs.version }}" || echo "No changes to commit"
+          git tag -a ${{ steps.version.outputs.version }} -m "Release ${{ steps.version.outputs.version }}"
+          git push
+          git push origin tag ${{ steps.version.outputs.version }}
+      
+      - name: Upload github release
+        uses: softprops/action-gh-release@v1
+        if: inputs.create_release == true
+        with:
+           body_path: GITHUB_CHANGELOG.md
+           tag_name: ${{ steps.version.outputs.version }}
