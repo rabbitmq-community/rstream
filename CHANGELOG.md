@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2025-11-14
+
+### Miscellaneous Tasks
+
+- Update version format in bump_main.yaml
+
 ## [0.1.0] - 2025-11-14
 
 ### Features
