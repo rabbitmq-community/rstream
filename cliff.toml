@@ -54,7 +54,20 @@ commit_preprocessors = [
 ]
 # regex for parsing and grouping commits
 commit_parsers = [
-  # Conventional commits (lowercase)
+  # GitHub PR labels take precedence
+  { pr_labels = ["feature"], group = "<!-- 0 -->Features" },
+  { pr_labels = ["bug-fix"], group = "<!-- 1 -->Bug Fixes" },
+  { pr_labels = ["performance"], group = "<!-- 2 -->Performance" },
+  { pr_labels = ["documentation"], group = "<!-- 3 -->Documentation" },
+  { pr_labels = ["refactoring"], group = "<!-- 4 -->Refactoring" },
+  { pr_labels = ["styling"], group = "<!-- 5 -->Styling" },
+  { pr_labels = ["testing"], group = "<!-- 6 -->Testing" },
+  { pr_labels = ["chore"], group = "<!-- 7 -->Miscellaneous Tasks" },
+  { pr_labels = ["ci"], group = "<!-- 8 -->Continuous Integration" },
+  { pr_labels = ["build"], group = "<!-- 9 -->Build System" },
+  { pr_labels = ["revert"], group = "<!-- 10 -->Reverts" },
+  { pr_labels = ["security"], group = "<!-- 11 -->Security" },
+  # Conventional commits (lowercase) - fallback if no PR labels
   { message = "^feat", group = "<!-- 0 -->Features" },
   { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
   { message = "^perf", group = "<!-- 2 -->Performance" },
