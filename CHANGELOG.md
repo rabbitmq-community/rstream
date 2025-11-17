@@ -23,7 +23,7 @@ This release focuses on improving stability during reconnection.
 - Update dependencies by @Gsantomaggio in [#243](https://github.com/rabbitmq-community/rstream/pull/243)
 
 ### Removed
-- Remove `reconnect_stream`
+- Removed `reconnect_stream`
 - Removed `message_context.consumer.get_stream(message_context.subscriber_name)` in favour of `message_context.stream`
 
 ### Breaking changes
