@@ -1,12 +1,28 @@
+# getting started with rstream producer example and send_batch method
+# python rstream client for rabbitmq stream protocol
+# example of publish messages using rstream with send_batch method and asynchronous confirmation callback
+#
+# path example: https://github.com/rabbitmq-community/rstream/blob/master/docs/examples/basic_producers/producer_send_batch.py
+# more info about rabbitmq stream protocol: https://www.rabbitmq.com/docs/stream
+
+
+
 import asyncio
 import time
 
-from rstream import AMQPMessage, Producer
+from rstream import AMQPMessage, Producer, ConfirmationStatus
 
 STREAM = "my-test-stream"
 LOOP = 10000
 BATCH = 100
 
+async def on_publish_confirm(
+        confirmation: ConfirmationStatus
+) -> None:
+    if confirmation.is_confirmed:
+        print(f"Message with id: {confirmation.message_id} confirmed")
+    else:
+        print(f"Message with id: {confirmation.message_id} not confirmed")
 
 async def publish():
     async with Producer("localhost", username="guest", password="guest") as producer:
@@ -24,7 +40,7 @@ async def publish():
                 )
                 messages.append(amqp_message)
             # send_batch is synchronous. will wait till termination
-            await producer.send_batch(stream=STREAM, batch=messages)
+            await producer.send_batch(stream=STREAM, batch=messages, on_publish_confirm=on_publish_confirm)
 
         end_time = time.perf_counter()
         message_for_second = LOOP * BATCH / (end_time - start_time)
