@@ -425,13 +425,20 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
         received_offsets = []
 
         async def consumer_cb(message: bytes, message_context: MessageContext) -> None:
+
+            if message_context.offset == 5:
+                await message_context.consumer.store_offset(
+                    message_context.stream, "sac_name", message_context.offset
+                )
+
             received_offsets.append(message_context.offset)
 
         async def consumer_update_listener_with_custom_offset(
             is_active: bool, event_context: EventContext
         ) -> OffsetSpecification:
             if is_active:
-                return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=5)
+                offset_stored = await event_context.consumer.query_offset(event_context.stream, "sac_name")
+                return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=offset_stored)
             return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
 
         properties = {"single-active-consumer": "true", "name": "sac_name"}

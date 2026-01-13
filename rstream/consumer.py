@@ -124,6 +124,7 @@ class Consumer(IReliableEntity):
         self._last_subscriber_id = utils.AtomicInteger(-1)
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
+        self._operation_lock = asyncio.Lock()  # Separate lock for query/store operations to avoid deadlocks
         self._on_close_handler = on_close_handler
         self._connection_name = connection_name
         self._sasl_configuration_mechanism = sasl_configuration_mechanism
@@ -393,7 +394,9 @@ class Consumer(IReliableEntity):
         if subscriber_name == "":
             raise ValueError("subscriber_name must not be an empty string")
 
-        async with self._lock:
+        # Use separate lock for query operations to avoid deadlocks when called
+        # from consumer_update_listener while subscribe() holds the main lock
+        async with self._operation_lock:
             offset = await (await self.default_client).query_offset(
                 stream,
                 subscriber_name,
@@ -403,7 +406,9 @@ class Consumer(IReliableEntity):
         return offset
 
     async def store_offset(self, stream: str, subscriber_name: str, offset: int) -> None:
-        async with self._lock:
+        # Use separate lock for store operations to avoid deadlocks when called
+        # from message callbacks while subscribe() holds the main lock
+        async with self._operation_lock:
             await (await self.default_client).store_offset(
                 stream=stream,
                 reference=subscriber_name,
