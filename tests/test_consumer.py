@@ -413,11 +413,12 @@ async def test_consume_multiple_streams(consumer: Consumer, producer: Producer) 
 
 
 async def test_consume_with_sac_custom_consumer_update_listener_cb(
-    consumer: Consumer, producer: Producer
+    consumer_sac_1: Consumer, consumer_sac_2: Consumer, producer: Producer
 ) -> None:
     stream_name = "stream_test_consume_with_sac_custom_consumer_update_listener_cb_{}".format(time.time())
     await producer.create_stream(stream=stream_name)
     try:
+
         # necessary to use send_batch, since in this case, upon delivery, rabbitmq will deliver
         # this batch as a whole, and not one message at a time, like send_wait
         await producer.send_batch(stream_name, [AMQPMessage(body=f"{i}".encode()) for i in range(10)])
@@ -425,25 +426,22 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
         received_offsets = []
 
         async def consumer_cb(message: bytes, message_context: MessageContext) -> None:
-
             if message_context.offset == 5:
                 await message_context.consumer.store_offset(
                     message_context.stream, "sac_name", message_context.offset
                 )
-
             received_offsets.append(message_context.offset)
 
         async def consumer_update_listener_with_custom_offset(
             is_active: bool, event_context: EventContext
         ) -> OffsetSpecification:
             if is_active:
-                offset_stored = await event_context.consumer.query_offset(event_context.stream, "sac_name")
-                return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=offset_stored)
+                return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=5)
             return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
 
         properties = {"single-active-consumer": "true", "name": "sac_name"}
-        async with consumer:
-            await consumer.subscribe(
+        async with consumer_sac_1:
+            await consumer_sac_1.subscribe(
                 stream=stream_name,
                 callback=consumer_cb,
                 properties=properties,
@@ -452,8 +450,28 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
             )
 
             await wait_for(lambda: len(received_offsets) >= 1)
-
             assert received_offsets[0] == 5
+
+        async def consumer_cb_2(message: bytes, message_context: MessageContext) -> None:
+            pass
+
+        async def consumer_update_listener_with_custom_offset_2(
+            is_active: bool, event_context: EventContext
+        ) -> OffsetSpecification:
+            if is_active:
+                off = await event_context.consumer.query_offset(event_context.stream, "sac_name")
+                return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=off)
+
+            return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
+
+        async with consumer_sac_2:
+            await consumer_sac_1.subscribe(
+                stream=stream_name,
+                callback=consumer_cb_2,
+                properties=properties,
+                offset_specification=ConsumerOffsetSpecification(OffsetType.FIRST),
+                consumer_update_listener=consumer_update_listener_with_custom_offset_2,
+            )
 
     finally:
         await producer.delete_stream(stream=stream_name)

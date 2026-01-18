@@ -111,6 +111,7 @@ class BaseClient:
         self._streams: list[str] = []
         # used to assing publish_ids and subscribe_ids
         self._available_client_ids: AtomicInteger = AtomicInteger(0)
+        self._is_locator: bool = False
 
     def start_task(self, name: str, coro: Awaitable[None]) -> None:
         assert name not in self._tasks
@@ -206,7 +207,7 @@ class BaseClient:
         timeout: Optional[int] = None,
     ) -> Awaitable[FT]:
         if timeout is None:
-            timeout = DEFAULT_REQUEST_TIMEOUT
+            timeout = 5
 
         fut: asyncio.Future[schema.Frame] = asyncio.Future()
         _key = frame_cls.key, corr_id
@@ -729,6 +730,7 @@ class ClientPool:
         stream: Optional[str] = None,
         sasl_configuration_mechanism: Optional[SlasMechanism] = None,
         max_clients_by_connections: int = MAX_ITEM_ALLOWED,
+        locator_request: bool = False,
     ) -> Client:
         """Get a client according to `addr` parameter
 
@@ -740,11 +742,18 @@ class ClientPool:
         """
         desired_addr = addr or self.addr
         sasl_configuration_mechanism = sasl_configuration_mechanism or self._sasl_configuration_mechanism
+        is_locator_request = locator_request
 
         # check if at least one client of desired_addr is connected
         if desired_addr in self._clients:
             for client in self._clients[desired_addr]:
                 if client.is_connection_alive() is True and await client.get_count_available_ids() > 0:
+                    # If requesting a locator connection, only return locator connections
+                    if is_locator_request and not client._is_locator:
+                        continue
+                    # If requesting a non-locator connection, skip locator connections
+                    if not is_locator_request and client._is_locator:
+                        continue
                     if stream is not None:
                         client.add_stream(stream)
                     return client
@@ -772,6 +781,9 @@ class ClientPool:
 
         if stream is not None:
             self._clients[desired_addr][len(self._clients[desired_addr]) - 1].add_stream(stream)
+        elif is_locator_request:
+            # Mark as locator connection if no stream is assigned
+            self._clients[desired_addr][len(self._clients[desired_addr]) - 1]._is_locator = True
 
         assert self._clients[desired_addr][len(self._clients[desired_addr]) - 1].is_started
         return self._clients[desired_addr][len(self._clients[desired_addr]) - 1]

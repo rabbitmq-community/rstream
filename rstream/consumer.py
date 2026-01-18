@@ -124,7 +124,6 @@ class Consumer(IReliableEntity):
         self._last_subscriber_id = utils.AtomicInteger(-1)
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
-        self._operation_lock = asyncio.Lock()  # Separate lock for query/store operations to avoid deadlocks
         self._on_close_handler = on_close_handler
         self._connection_name = connection_name
         self._sasl_configuration_mechanism = sasl_configuration_mechanism
@@ -148,9 +147,10 @@ class Consumer(IReliableEntity):
     async def start(self) -> None:
         self._default_client = await self._pool.get(
             connection_closed_handler=self._on_connection_closed,
-            connection_name=self._connection_name,
+            connection_name="locator-{}".format(self._connection_name),
             sasl_configuration_mechanism=self._sasl_configuration_mechanism,
             max_clients_by_connections=self._max_subscribers_by_connection,
+            locator_request=True,
         )
 
     def stop(self) -> None:
@@ -188,6 +188,7 @@ class Consumer(IReliableEntity):
                     connection_closed_handler=self._on_connection_closed,
                     connection_name=self._connection_name,
                     max_clients_by_connections=self._max_subscribers_by_connection,
+                    locator_request=True,
                 )
 
             leader, replicas = await (await self.default_client).query_leader_and_replicas(stream)
@@ -203,6 +204,7 @@ class Consumer(IReliableEntity):
                 connection_name=self._connection_name,
                 stream=stream,
                 max_clients_by_connections=self._max_subscribers_by_connection,
+                locator_request=False,
             )
 
             await self._close_locator_connection()
@@ -394,9 +396,7 @@ class Consumer(IReliableEntity):
         if subscriber_name == "":
             raise ValueError("subscriber_name must not be an empty string")
 
-        # Use separate lock for query operations to avoid deadlocks when called
-        # from consumer_update_listener while subscribe() holds the main lock
-        async with self._operation_lock:
+        async with self._lock:
             offset = await (await self.default_client).query_offset(
                 stream,
                 subscriber_name,
@@ -406,9 +406,7 @@ class Consumer(IReliableEntity):
         return offset
 
     async def store_offset(self, stream: str, subscriber_name: str, offset: int) -> None:
-        # Use separate lock for store operations to avoid deadlocks when called
-        # from message callbacks while subscribe() holds the main lock
-        async with self._operation_lock:
+        async with self._lock:
             await (await self.default_client).store_offset(
                 stream=stream,
                 reference=subscriber_name,
@@ -624,6 +622,7 @@ class Consumer(IReliableEntity):
             connection_closed_handler=self._on_close_handler,
             connection_name=self._connection_name,
             sasl_configuration_mechanism=self._sasl_configuration_mechanism,
+            locator_request=True,
         )
 
     async def _close_locator_connection(self):
