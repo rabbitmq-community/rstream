@@ -30,7 +30,6 @@ async def consume():
             )
         )
 
-    await consumer.start()
     await consumer.subscribe(stream=STREAM, callback=on_message, decoder=amqp_decoder)
     await consumer.run()
 

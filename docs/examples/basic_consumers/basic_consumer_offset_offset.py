@@ -32,7 +32,6 @@ async def consume():
             )
         )
 
-    await consumer.start()
     # Possible values of OffsetType are: FIRST (default), NEXT, LAST, TIMESTAMP and OFFSET
     await consumer.subscribe(
         stream=STREAM,

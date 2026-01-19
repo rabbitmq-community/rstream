@@ -106,6 +106,7 @@ class SuperStreamConsumer:
             self._default_client = await self._pool.get(
                 connection_name="rstream-locator",
                 max_clients_by_connections=self._max_subscribers_by_connection,
+                locator_request=True,
             )
         return self._default_client
 
@@ -160,7 +161,9 @@ class SuperStreamConsumer:
 
         if self._default_client is None or self._default_client.is_connection_alive() is False:
             self._default_client = await self._pool.get(
-                connection_closed_handler=self._on_close_handler, connection_name="rstream-locator"
+                connection_closed_handler=self._on_close_handler,
+                connection_name="rstream-locator",
+                locator_request=True,
             )
 
         logger.debug("subscribe(): Get _super_stream_metadata and partitions")

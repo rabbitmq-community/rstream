@@ -66,8 +66,6 @@ async def consume():
         loop = asyncio.get_event_loop()
         loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(consumer.close()))
 
-        await consumer.start()
-
         # properties of the consumer (enabling single active mode)
         properties: dict[str, str] = defaultdict(str)  # type: ignore
         properties["single-active-consumer"] = "true"
