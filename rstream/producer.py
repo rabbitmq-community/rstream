@@ -828,6 +828,9 @@ class Producer(IReliableEntity):
             del self._clients[stream]
 
     async def _maybe_clean_up_during_lost_connection(self, publisher_id: int):
+        # publisher_id is new/not known, so there is nothing to do
+        if publisher_id not in self._publishers:
+            return
 
         await asyncio.sleep(randrange(3))
         stream = self._publishers[publisher_id].stream
@@ -836,29 +839,28 @@ class Producer(IReliableEntity):
             "after disconnection or metadata update events for stream {}".format(stream)
         )
 
-        if publisher_id in self._publishers:
-            # try to delete the publisher if deadling
-            try:
-                await asyncio.wait_for(
-                    self._publishers[publisher_id].client.delete_publisher(self._publishers[publisher_id].id),
-                    3,
+        # try to delete the publisher if deadling
+        try:
+            await asyncio.wait_for(
+                self._publishers[publisher_id].client.delete_publisher(self._publishers[publisher_id].id),
+                3,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "[maybe_clean_up_during_lost_connection] Timeout deleting publisher for stream {}".format(
+                    stream
                 )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "[maybe_clean_up_during_lost_connection] Timeout deleting publisher for stream {}".format(
-                        stream
-                    )
-                )
-            if self._publishers[publisher_id].client.is_connection_alive():
-                await self._publishers[publisher_id].client.remove_stream(
-                    self._publishers[publisher_id].stream
-                )
-                await self._publishers[publisher_id].client.free_available_id()
-                if await self._publishers[publisher_id].client.get_stream_count() == 0:
-                    await self._publishers[publisher_id].client.close()
-            else:
+            )
+        if self._publishers[publisher_id].client.is_connection_alive():
+            await self._publishers[publisher_id].client.remove_stream(
+                self._publishers[publisher_id].stream
+            )
+            await self._publishers[publisher_id].client.free_available_id()
+            if await self._publishers[publisher_id].client.get_stream_count() == 0:
                 await self._publishers[publisher_id].client.close()
-            del self._publishers[publisher_id]
+        else:
+            await self._publishers[publisher_id].client.close()
+        del self._publishers[publisher_id]
 
         if stream in self._clients:
             del self._clients[stream]
