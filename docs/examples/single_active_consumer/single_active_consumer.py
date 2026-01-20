@@ -1,3 +1,11 @@
+# rstream: python stream client for rabbitmq stream protocol
+# rstream super stream with single active consumer example
+# super stream documentation: https://www.rabbitmq.com/docs/streams#super-streams
+# single active consumer documentation:
+# https://www.rabbitmq.com/blog/2022/07/05/rabbitmq-3-11-feature-preview-single-active-consumer-for-streams
+# example path: https://github.com/rabbitmq-community/rstream/blob/master/docs/examples/single_active_consumer/single_active_consumer.py
+# more info about rabbitmq stream protocol: https://www.rabbitmq.com/docs/stream
+
 import asyncio
 import logging
 import signal

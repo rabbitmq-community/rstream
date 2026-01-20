@@ -1,3 +1,10 @@
+# rstream: python stream client for rabbitmq stream protocol
+# rstream super stream producer example
+# super stream documentation: https://www.rabbitmq.com/docs/streams#super-streams
+# example path: https://github.com/rabbitmq-community/rstream/blob/master/docs/examples/single_active_consumer/sac_super_stream_producer.py
+# more info about rabbitmq stream protocol: https://www.rabbitmq.com/docs/stream
+
+
 import asyncio
 import logging
 import sys
