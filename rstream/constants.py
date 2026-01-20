@@ -2,6 +2,8 @@ import enum
 from dataclasses import dataclass
 from typing import Optional
 
+DEFAULT_REQUEST_TIMEOUT = 10
+
 
 class T(enum.Enum):
     int8 = enum.auto()

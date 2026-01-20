@@ -44,7 +44,6 @@ HT = Annotated[
     "Frame handler type",
 ]
 
-DEFAULT_REQUEST_TIMEOUT = 10
 
 MT = TypeVar("MT")
 CB = Annotated[Callable[[MT], Union[None, Awaitable[None]]], "Message callback type"]

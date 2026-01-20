@@ -1151,31 +1151,31 @@ async def test_consume_with_sac_update_listener_should_be_called_after_kill() ->
 
     stream_name = "test_consume_with_sac_update_listener_should_be_called_after_kill_{}".format(time.time())
     await consumer_sac.create_stream(stream_name)
+    try:
+        update_calls = []
 
-    update_calls = []
+        async def consumer_update_listener(is_active: bool, _: EventContext) -> OffsetSpecification:
 
-    async def consumer_update_listener(is_active: bool, _: EventContext) -> OffsetSpecification:
+            if is_active:
+                update_calls.append(True)
+                return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=0)
+            return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
 
-        if is_active:
-            update_calls.append(True)
-            return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=0)
-        return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
+        captured: list[bytes] = []
+        properties = {"single-active-consumer": "true", "name": "sac_name"}
+        async with consumer_sac:
+            await consumer_sac.subscribe(
+                stream=stream_name,
+                properties=properties,
+                offset_specification=ConsumerOffsetSpecification(OffsetType.FIRST),
+                consumer_update_listener=consumer_update_listener,
+                callback=lambda message, message_context: captured.append(bytes(message)),
+            )
 
-    captured: list[bytes] = []
-    properties = {"single-active-consumer": "true", "name": "sac_name"}
-    async with consumer_sac:
-        await consumer_sac.subscribe(
-            stream=stream_name,
-            properties=properties,
-            offset_specification=ConsumerOffsetSpecification(OffsetType.FIRST),
-            consumer_update_listener=consumer_update_listener,
-            callback=lambda message, message_context: captured.append(bytes(message)),
-        )
-
-        asyncio.create_task(consumer_sac.run())
-        await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
-        await http_api_delete_connection_and_check(conn_name)
-        await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)
-        await wait_for(lambda: len(update_calls) >= 1, 10)
-
-    pass
+            asyncio.create_task(consumer_sac.run())
+            await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
+            await http_api_delete_connection_and_check(conn_name)
+            await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)
+            await wait_for(lambda: len(update_calls) >= 1, 10)
+    finally:
+        await delete_stream_from_consumer(consumer_sac, stream_name)
