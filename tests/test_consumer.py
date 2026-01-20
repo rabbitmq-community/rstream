@@ -465,7 +465,7 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
             return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
 
         async with consumer_sac_2:
-            await consumer_sac_1.subscribe(
+            await consumer_sac_2.subscribe(
                 stream=stream_name,
                 callback=consumer_cb_2,
                 properties=properties,
