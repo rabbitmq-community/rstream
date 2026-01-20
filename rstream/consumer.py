@@ -73,6 +73,8 @@ class _Subscriber:
     offset_type: OffsetType
     offset: int
     filter_input: Optional[FilterConfiguration]
+    properties: Optional[dict[str, Any]]
+    consumer_update_listener: Optional[Callable[[bool, EventContext], Awaitable[OffsetSpecification]]]
 
 
 class Consumer(IReliableEntity):
@@ -144,12 +146,16 @@ class Consumer(IReliableEntity):
     async def __aexit__(self, *_: Any) -> None:
         await self.close()
 
+    # Deprecated: This method is deprecated and will be removed in future versions.
+    # The _default_client will be created automatically when needed.
+    # Use of this method is discouraged.
     async def start(self) -> None:
         self._default_client = await self._pool.get(
             connection_closed_handler=self._on_connection_closed,
-            connection_name=self._connection_name,
+            connection_name=f"locator-{self._connection_name}",
             sasl_configuration_mechanism=self._sasl_configuration_mechanism,
             max_clients_by_connections=self._max_subscribers_by_connection,
+            locator_request=True,
         )
 
     def stop(self) -> None:
@@ -185,16 +191,16 @@ class Consumer(IReliableEntity):
                 )
                 self._default_client = await self._pool.get(
                     connection_closed_handler=self._on_connection_closed,
-                    connection_name=self._connection_name,
+                    connection_name=f"locator-{self._connection_name}",
                     max_clients_by_connections=self._max_subscribers_by_connection,
+                    locator_request=True,
                 )
 
-            leader, replicas = await (await self.default_client).query_leader_and_replicas(stream)
+            client = await self.default_client
+            leader, replicas = await client.query_leader_and_replicas(stream)
             broker = random.choice(replicas) if replicas else leader
             logger.debug(
-                "[get_or_create_client] Getting/Creating connection for broker: {}:{}".format(
-                    broker.host, broker.port
-                )
+                f"[get_or_create_client] Getting/Creating connection for broker: {broker.host}:{broker.port}"
             )
             self._clients[stream] = await self._pool.get(
                 addr=Addr(broker.host, broker.port),
@@ -202,9 +208,8 @@ class Consumer(IReliableEntity):
                 connection_name=self._connection_name,
                 stream=stream,
                 max_clients_by_connections=self._max_subscribers_by_connection,
+                locator_request=False,
             )
-
-            await self._close_locator_connection()
 
         return self._clients[stream]
 
@@ -217,16 +222,19 @@ class Consumer(IReliableEntity):
         offset_type: OffsetType,
         offset: Optional[int],
         filter_input: Optional[FilterConfiguration],
+        properties: Optional[dict[str, Any]] = None,
+        consumer_update_listener: Optional[
+            Callable[[bool, EventContext], Awaitable[OffsetSpecification]]
+        ] = None,
     ) -> _Subscriber:
         logger.debug("[create_subscriber] Create subscriber for stream : {}".format(stream))
         #  need to check if the current subscribers for this stream reached the max limit
         # We can have multiple subscribers sharing same connection, so their ids must be distinct
 
         # select to see if there is already a stream for this instance
-
         for value in self._subscribers.values():
             if value.stream == stream:
-                raise StreamAlreadySubscribed("Stream  {} already subscribed".format(stream))
+                raise StreamAlreadySubscribed(f"Stream {stream} already subscribed")
 
         client = await self._get_or_create_client(stream)
         await client.inc_available_id()
@@ -244,6 +252,8 @@ class Consumer(IReliableEntity):
             offset_type=offset_type,
             offset=offset or 0,
             filter_input=filter_input,
+            properties=properties,
+            consumer_update_listener=consumer_update_listener,
         )
         return subscriber
 
@@ -276,6 +286,8 @@ class Consumer(IReliableEntity):
                 offset_type=offset_specification.offset_type,
                 offset=offset_specification.offset,
                 filter_input=filter_input,
+                properties=properties,
+                consumer_update_listener=consumer_update_listener,
             )
 
             await subscriber.client.run_queue_listener_task(
@@ -299,7 +311,7 @@ class Consumer(IReliableEntity):
         # to handle single-active-consumer
         if properties is not None:
             if "single-active-consumer" in properties:
-                logger.debug("subscribe(): Enabling SAC")
+                logger.debug("[subscribe] Enabling SAC for stream: {}".format(stream))
                 subscriber.client.add_handler(
                     schema.ConsumerUpdateResponse,
                     partial(
@@ -394,22 +406,15 @@ class Consumer(IReliableEntity):
             raise ValueError("subscriber_name must not be an empty string")
 
         async with self._lock:
-            offset = await (await self.default_client).query_offset(
-                stream,
-                subscriber_name,
-            )
-            await self._close_locator_connection()
+            client = await self.default_client
+            offset = await client.query_offset(stream, subscriber_name)
 
         return offset
 
     async def store_offset(self, stream: str, subscriber_name: str, offset: int) -> None:
         async with self._lock:
-            await (await self.default_client).store_offset(
-                stream=stream,
-                reference=subscriber_name,
-                offset=offset,
-            )
-            await self._close_locator_connection()
+            client = await self.default_client
+            await client.store_offset(stream=stream, reference=subscriber_name, offset=offset)
 
     @staticmethod
     def _filter_messages(
@@ -504,6 +509,7 @@ class Consumer(IReliableEntity):
                 del self._subscribers[current_subscriber.subscription_id]
 
         if current_subscriber is not None:
+            properties_s = current_subscriber.properties
             await self._remove_stream_from_client(stream)
             result = self._recovery_strategy.recover(
                 self,
@@ -516,14 +522,18 @@ class Consumer(IReliableEntity):
                                     callback=current_subscriber.callback,
                                     decoder=current_subscriber.decoder,
                                     offset=current_subscriber.offset,
+                                    consumer_update_listener=current_subscriber.consumer_update_listener,
                                     filter_input=current_subscriber.filter_input:
                 self.subscribe(
                     stream=stream_s,
                     subscriber_name=reference,
                     callback=callback,
                     decoder=decoder,
+                    properties=properties_s,
+                    consumer_update_listener=consumer_update_listener,
                     offset_specification=ConsumerOffsetSpecification(OffsetType.OFFSET, offset),
                     filter_input=filter_input,
+
                 ),
                 # fmt: on
             )
@@ -566,13 +576,11 @@ class Consumer(IReliableEntity):
     ) -> None:
         async with self._lock:
             try:
-                await (await self.default_client).create_stream(stream, arguments)
-
+                client = await self.default_client
+                await client.create_stream(stream, arguments)
             except exceptions.StreamAlreadyExists:
                 if not exists_ok:
                     raise
-            finally:
-                await self._close_locator_connection()
 
     async def clean_up_subscribers(self, stream: str):
         for subscriber in list(self._subscribers.values()):
@@ -584,29 +592,27 @@ class Consumer(IReliableEntity):
 
         async with self._lock:
             try:
-                await (await self.default_client).delete_stream(stream)
-
+                client = await self.default_client
+                await client.delete_stream(stream)
             except exceptions.StreamDoesNotExist:
                 if not missing_ok:
                     raise
-            finally:
-                await self._close_locator_connection()
 
     async def stream_exists(self, stream: str, on_close_event: bool = False) -> bool:
         async with self._lock:
             if on_close_event:
                 self._default_client = None
-            stream_exists = await (await self.default_client).stream_exists(stream)
-            await self._close_locator_connection()
+            client = await self.default_client
+            stream_exists = await client.stream_exists(stream)
 
         return stream_exists
 
     async def _check_if_filtering_is_supported(self) -> None:
         command_version_input = schema.FrameHandlerInfo(Key.Publish.value, min_version=1, max_version=2)
-        server_command_version: schema.FrameHandlerInfo = await (
-            await self.default_client
-        ).exchange_command_version(command_version_input)
-        await self._close_locator_connection()
+        client = await self.default_client
+        server_command_version: schema.FrameHandlerInfo = await client.exchange_command_version(
+            command_version_input
+        )
         if server_command_version.max_version < 2:
             filter_not_supported = (
                 "Filtering is not supported by the broker "
@@ -617,14 +623,10 @@ class Consumer(IReliableEntity):
     async def _create_locator_connection(self) -> Client:
         return await self._pool.get(
             connection_closed_handler=self._on_close_handler,
-            connection_name=self._connection_name,
+            connection_name=f"locator-{self._connection_name}",
             sasl_configuration_mechanism=self._sasl_configuration_mechanism,
+            locator_request=True,
         )
-
-    async def _close_locator_connection(self):
-        if await (await self.default_client).get_stream_count() == 0:
-            await (await self.default_client).close()
-            self._default_client = None
 
     async def _remove_stream_from_client(self, stream: str) -> None:
         if stream in self._clients:

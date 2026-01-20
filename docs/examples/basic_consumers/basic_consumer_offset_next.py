@@ -34,7 +34,6 @@ async def consume():
             + str(message_context.offset)
         )
 
-    await consumer.start()
     await consumer.subscribe(
         stream=STREAM,
         callback=on_message,

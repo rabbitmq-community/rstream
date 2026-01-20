@@ -413,11 +413,12 @@ async def test_consume_multiple_streams(consumer: Consumer, producer: Producer) 
 
 
 async def test_consume_with_sac_custom_consumer_update_listener_cb(
-    consumer: Consumer, producer: Producer
+    consumer_sac_1: Consumer, consumer_sac_2: Consumer, producer: Producer
 ) -> None:
     stream_name = "stream_test_consume_with_sac_custom_consumer_update_listener_cb_{}".format(time.time())
     await producer.create_stream(stream=stream_name)
     try:
+
         # necessary to use send_batch, since in this case, upon delivery, rabbitmq will deliver
         # this batch as a whole, and not one message at a time, like send_wait
         await producer.send_batch(stream_name, [AMQPMessage(body=f"{i}".encode()) for i in range(10)])
@@ -425,6 +426,10 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
         received_offsets = []
 
         async def consumer_cb(message: bytes, message_context: MessageContext) -> None:
+            if message_context.offset == 5:
+                await message_context.consumer.store_offset(
+                    message_context.stream, "sac_name", message_context.offset
+                )
             received_offsets.append(message_context.offset)
 
         async def consumer_update_listener_with_custom_offset(
@@ -435,8 +440,8 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
             return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
 
         properties = {"single-active-consumer": "true", "name": "sac_name"}
-        async with consumer:
-            await consumer.subscribe(
+        async with consumer_sac_1:
+            await consumer_sac_1.subscribe(
                 stream=stream_name,
                 callback=consumer_cb,
                 properties=properties,
@@ -445,8 +450,28 @@ async def test_consume_with_sac_custom_consumer_update_listener_cb(
             )
 
             await wait_for(lambda: len(received_offsets) >= 1)
-
             assert received_offsets[0] == 5
+
+        async def consumer_cb_2(message: bytes, message_context: MessageContext) -> None:
+            pass
+
+        async def consumer_update_listener_with_custom_offset_2(
+            is_active: bool, event_context: EventContext
+        ) -> OffsetSpecification:
+            if is_active:
+                off = await event_context.consumer.query_offset(event_context.stream, "sac_name")
+                return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=off)
+
+            return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
+
+        async with consumer_sac_2:
+            await consumer_sac_2.subscribe(
+                stream=stream_name,
+                callback=consumer_cb_2,
+                properties=properties,
+                offset_specification=ConsumerOffsetSpecification(OffsetType.FIRST),
+                consumer_update_listener=consumer_update_listener_with_custom_offset_2,
+            )
 
     finally:
         await producer.delete_stream(stream=stream_name)
@@ -1108,3 +1133,49 @@ async def test_super_stream_consumer_connection_broke_with_recovery_enabled(
     await wait_for(lambda: offset_received == [0, 1], 10)
     await super_stream_consumer_recovery.close()
     await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)
+
+
+# test_consume_with_sac_update_listener_should_be_called_after_kill tests that the sac update listener is called
+# after the connection is killed and the consumer reconnects
+async def test_consume_with_sac_update_listener_should_be_called_after_kill() -> None:
+    conn_name = "test_consume_with_sac_update_listener_should_be_called_after_kill_{}".format(time.time())
+    consumer_sac = Consumer(
+        host="localhost",
+        port=5552,
+        vhost="/",
+        username="guest",
+        password="guest",
+        connection_name=conn_name,
+        recovery_strategy=BackOffRecoveryStrategy(True),
+    )
+
+    stream_name = "test_consume_with_sac_update_listener_should_be_called_after_kill_{}".format(time.time())
+    await consumer_sac.create_stream(stream_name)
+    try:
+        update_calls = []
+
+        async def consumer_update_listener(is_active: bool, _: EventContext) -> OffsetSpecification:
+
+            if is_active:
+                update_calls.append(True)
+                return OffsetSpecification(offset_type=OffsetType.OFFSET, offset=0)
+            return OffsetSpecification(offset_type=OffsetType.FIRST, offset=0)
+
+        captured: list[bytes] = []
+        properties = {"single-active-consumer": "true", "name": "sac_name"}
+        async with consumer_sac:
+            await consumer_sac.subscribe(
+                stream=stream_name,
+                properties=properties,
+                offset_specification=ConsumerOffsetSpecification(OffsetType.FIRST),
+                consumer_update_listener=consumer_update_listener,
+                callback=lambda message, message_context: captured.append(bytes(message)),
+            )
+
+            asyncio.create_task(consumer_sac.run())
+            await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 1, 10)
+            await http_api_delete_connection_and_check(conn_name)
+            await wait_for(lambda: http_api_count_connections_by_name(conn_name) == 0, 10)
+            await wait_for(lambda: len(update_calls) >= 1, 10)
+    finally:
+        await delete_stream_from_consumer(consumer_sac, stream_name)

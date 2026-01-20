@@ -44,7 +44,6 @@ HT = Annotated[
     "Frame handler type",
 ]
 
-DEFAULT_REQUEST_TIMEOUT = 10
 
 MT = TypeVar("MT")
 CB = Annotated[Callable[[MT], Union[None, Awaitable[None]]], "Message callback type"]
@@ -111,6 +110,7 @@ class BaseClient:
         self._streams: list[str] = []
         # used to assing publish_ids and subscribe_ids
         self._available_client_ids: AtomicInteger = AtomicInteger(0)
+        self._is_locator: bool = False
 
     def start_task(self, name: str, coro: Awaitable[None]) -> None:
         assert name not in self._tasks
@@ -206,7 +206,7 @@ class BaseClient:
         timeout: Optional[int] = None,
     ) -> Awaitable[FT]:
         if timeout is None:
-            timeout = DEFAULT_REQUEST_TIMEOUT
+            timeout = constants.DEFAULT_REQUEST_TIMEOUT
 
         fut: asyncio.Future[schema.Frame] = asyncio.Future()
         _key = frame_cls.key, corr_id
@@ -309,12 +309,14 @@ class BaseClient:
         if self._heartbeat == 0:
             return
 
-        while True:
+        while self.is_connection_alive():
             await self.send_frame(schema.Heartbeat())
             await asyncio.sleep(self._heartbeat)
 
             if time.monotonic() - self._last_heartbeat > self._heartbeat * 2:
-                logger.warning("Heartbeats from server missing")
+                logger.warning("Heartbeats from server missing, last heartbeat: %s", self._last_heartbeat)
+
+        logger.debug("Heartbeat sender stopped")
 
     def _on_heartbeat(self, _: schema.Heartbeat) -> None:
         self._last_heartbeat = time.monotonic()
@@ -371,6 +373,10 @@ class BaseClient:
         self.server_properties = None
         self._tasks.clear()
         self._handlers.clear()
+
+    @property
+    def is_locator(self):
+        return self._is_locator
 
 
 class Client(BaseClient):
@@ -672,8 +678,7 @@ class Client(BaseClient):
     async def exchange_command_version(
         self, command_info: schema.FrameHandlerInfo
     ) -> schema.FrameHandlerInfo:
-        command_versions_input = []
-        command_versions_input.append(command_info)
+        command_versions_input = [command_info]
         resp = await self.sync_request(
             schema.ExchangeCommandVersionRequest(
                 self._corr_id_seq.next(),
@@ -729,6 +734,7 @@ class ClientPool:
         stream: Optional[str] = None,
         sasl_configuration_mechanism: Optional[SlasMechanism] = None,
         max_clients_by_connections: int = MAX_ITEM_ALLOWED,
+        locator_request: bool = False,
     ) -> Client:
         """Get a client according to `addr` parameter
 
@@ -737,15 +743,28 @@ class ClientPool:
 
         If no `addr` is supplied, then it is assumed the exact node is not important
         and `load_balancer_mode` is ignored.
+
+        locator_request: if True, only locator connections are returned
+        the goal is to leave the locator connections without streams.
+        Locator connections are used to query/update the cluster topology like querying leader/replicas and
+        offsets operations.
         """
         desired_addr = addr or self.addr
         sasl_configuration_mechanism = sasl_configuration_mechanism or self._sasl_configuration_mechanism
+        is_locator_request = locator_request
 
         # check if at least one client of desired_addr is connected
         if desired_addr in self._clients:
             for client in self._clients[desired_addr]:
                 if client.is_connection_alive() is True and await client.get_count_available_ids() > 0:
-                    if stream is not None:
+                    # If requesting a locator connection, only return locator connections
+                    if is_locator_request and not client.is_locator:
+                        continue
+                    # If requesting a non-locator connection, skip locator connections
+                    if not is_locator_request and client.is_locator:
+                        continue
+                    # Don't add streams to locator connections to preserve their purpose
+                    if stream is not None and not client.is_locator:
                         client.add_stream(stream)
                     return client
 
@@ -770,8 +789,12 @@ class ClientPool:
                 )
             )
 
-        if stream is not None:
+        # Don't add streams to locator connections to preserve their purpose
+        if stream is not None and not is_locator_request:
             self._clients[desired_addr][len(self._clients[desired_addr]) - 1].add_stream(stream)
+        elif is_locator_request:
+            # Mark as locator connection if no stream is assigned
+            self._clients[desired_addr][len(self._clients[desired_addr]) - 1]._is_locator = True
 
         assert self._clients[desired_addr][len(self._clients[desired_addr]) - 1].is_started
         return self._clients[desired_addr][len(self._clients[desired_addr]) - 1]
