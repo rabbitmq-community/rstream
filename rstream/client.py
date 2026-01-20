@@ -310,12 +310,14 @@ class BaseClient:
         if self._heartbeat == 0:
             return
 
-        while True:
+        while self.is_connection_alive():
             await self.send_frame(schema.Heartbeat())
             await asyncio.sleep(self._heartbeat)
 
             if time.monotonic() - self._last_heartbeat > self._heartbeat * 2:
-                logger.warning("Heartbeats from server missing")
+                logger.warning("Heartbeats from server missing, last heartbeat: %s", self._last_heartbeat)
+
+        logger.debug("Heartbeat sender stopped")
 
     def _on_heartbeat(self, _: schema.Heartbeat) -> None:
         self._last_heartbeat = time.monotonic()
@@ -372,6 +374,10 @@ class BaseClient:
         self.server_properties = None
         self._tasks.clear()
         self._handlers.clear()
+
+    @property
+    def is_locator(self):
+        return self._is_locator
 
 
 class Client(BaseClient):
@@ -673,8 +679,7 @@ class Client(BaseClient):
     async def exchange_command_version(
         self, command_info: schema.FrameHandlerInfo
     ) -> schema.FrameHandlerInfo:
-        command_versions_input = []
-        command_versions_input.append(command_info)
+        command_versions_input = [command_info]
         resp = await self.sync_request(
             schema.ExchangeCommandVersionRequest(
                 self._corr_id_seq.next(),
@@ -739,6 +744,11 @@ class ClientPool:
 
         If no `addr` is supplied, then it is assumed the exact node is not important
         and `load_balancer_mode` is ignored.
+
+        locator_request: if True, only locator connections are returned
+        the goal is to leave the locator connections without streams.
+        Locator connections are used to query/update the cluster topology like querying leader/replicas and
+        offsets operations.
         """
         desired_addr = addr or self.addr
         sasl_configuration_mechanism = sasl_configuration_mechanism or self._sasl_configuration_mechanism
@@ -749,10 +759,10 @@ class ClientPool:
             for client in self._clients[desired_addr]:
                 if client.is_connection_alive() is True and await client.get_count_available_ids() > 0:
                     # If requesting a locator connection, only return locator connections
-                    if is_locator_request and not client._is_locator:
+                    if is_locator_request and not client.is_locator:
                         continue
                     # If requesting a non-locator connection, skip locator connections
-                    if not is_locator_request and client._is_locator:
+                    if not is_locator_request and client.is_locator:
                         continue
                     if stream is not None:
                         client.add_stream(stream)

@@ -73,6 +73,8 @@ class _Subscriber:
     offset_type: OffsetType
     offset: int
     filter_input: Optional[FilterConfiguration]
+    properties: Optional[dict[str, Any]]
+    consumer_update_listener: Optional[Callable[[bool, EventContext], Awaitable[OffsetSpecification]]]
 
 
 class Consumer(IReliableEntity):
@@ -220,13 +222,16 @@ class Consumer(IReliableEntity):
         offset_type: OffsetType,
         offset: Optional[int],
         filter_input: Optional[FilterConfiguration],
+        properties: Optional[dict[str, Any]] = None,
+        consumer_update_listener: Optional[
+            Callable[[bool, EventContext], Awaitable[OffsetSpecification]]
+        ] = None,
     ) -> _Subscriber:
         logger.debug("[create_subscriber] Create subscriber for stream : {}".format(stream))
         #  need to check if the current subscribers for this stream reached the max limit
         # We can have multiple subscribers sharing same connection, so their ids must be distinct
 
         # select to see if there is already a stream for this instance
-
         for value in self._subscribers.values():
             if value.stream == stream:
                 raise StreamAlreadySubscribed(f"Stream {stream} already subscribed")
@@ -247,6 +252,8 @@ class Consumer(IReliableEntity):
             offset_type=offset_type,
             offset=offset or 0,
             filter_input=filter_input,
+            properties=properties,
+            consumer_update_listener=consumer_update_listener,
         )
         return subscriber
 
@@ -279,6 +286,8 @@ class Consumer(IReliableEntity):
                 offset_type=offset_specification.offset_type,
                 offset=offset_specification.offset,
                 filter_input=filter_input,
+                properties=properties,
+                consumer_update_listener=consumer_update_listener,
             )
 
             await subscriber.client.run_queue_listener_task(
@@ -302,7 +311,7 @@ class Consumer(IReliableEntity):
         # to handle single-active-consumer
         if properties is not None:
             if "single-active-consumer" in properties:
-                logger.debug("subscribe(): Enabling SAC")
+                logger.debug("[subscribe] Enabling SAC for stream: {}".format(stream))
                 subscriber.client.add_handler(
                     schema.ConsumerUpdateResponse,
                     partial(
@@ -500,6 +509,7 @@ class Consumer(IReliableEntity):
                 del self._subscribers[current_subscriber.subscription_id]
 
         if current_subscriber is not None:
+            properties_s = current_subscriber.properties
             await self._remove_stream_from_client(stream)
             result = self._recovery_strategy.recover(
                 self,
@@ -512,14 +522,18 @@ class Consumer(IReliableEntity):
                                     callback=current_subscriber.callback,
                                     decoder=current_subscriber.decoder,
                                     offset=current_subscriber.offset,
+                                    consumer_update_listener=current_subscriber.consumer_update_listener,
                                     filter_input=current_subscriber.filter_input:
                 self.subscribe(
                     stream=stream_s,
                     subscriber_name=reference,
                     callback=callback,
                     decoder=decoder,
+                    properties=properties_s,
+                    consumer_update_listener=consumer_update_listener,
                     offset_specification=ConsumerOffsetSpecification(OffsetType.OFFSET, offset),
                     filter_input=filter_input,
+
                 ),
                 # fmt: on
             )
