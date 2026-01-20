@@ -852,9 +852,7 @@ class Producer(IReliableEntity):
                 )
             )
         if self._publishers[publisher_id].client.is_connection_alive():
-            await self._publishers[publisher_id].client.remove_stream(
-                self._publishers[publisher_id].stream
-            )
+            await self._publishers[publisher_id].client.remove_stream(self._publishers[publisher_id].stream)
             await self._publishers[publisher_id].client.free_available_id()
             if await self._publishers[publisher_id].client.get_stream_count() == 0:
                 await self._publishers[publisher_id].client.close()
