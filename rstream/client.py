@@ -763,7 +763,8 @@ class ClientPool:
                     # If requesting a non-locator connection, skip locator connections
                     if not is_locator_request and client.is_locator:
                         continue
-                    if stream is not None:
+                    # Don't add streams to locator connections to preserve their purpose
+                    if stream is not None and not client.is_locator:
                         client.add_stream(stream)
                     return client
 
@@ -788,7 +789,8 @@ class ClientPool:
                 )
             )
 
-        if stream is not None:
+        # Don't add streams to locator connections to preserve their purpose
+        if stream is not None and not is_locator_request:
             self._clients[desired_addr][len(self._clients[desired_addr]) - 1].add_stream(stream)
         elif is_locator_request:
             # Mark as locator connection if no stream is assigned
