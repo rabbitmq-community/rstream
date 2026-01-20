@@ -207,7 +207,7 @@ class BaseClient:
         timeout: Optional[int] = None,
     ) -> Awaitable[FT]:
         if timeout is None:
-            timeout = 5
+            timeout = constants.DEFAULT_REQUEST_TIMEOUT
 
         fut: asyncio.Future[schema.Frame] = asyncio.Future()
         _key = frame_cls.key, corr_id
