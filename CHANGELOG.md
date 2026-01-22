@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [[0.40.1](https://github.com/rabbitmq-community/rstream/releases/tag/v0.40.1)]
+
+This release includes bug fixes and improvements to connection handling.
+
+## 0.40.1 - 2025-01-22
+- [Release 0.40.1](https://github.com/rabbitmq-community/rstream/releases/tag/v0.40.1) 
+
+### Fixed
+- Bugfix cleanup logic in `_maybe_clean_up_during_lost_connection` method by @dbotwinick in [#262](https://github.com/rabbitmq-community/rstream/pull/262)
+
+- Divide the locator connection from the Consumer connection by @Gsantomaggio in [#261](https://github.com/rabbitmq-community/rstream/pull/261)
+
 ## [[0.40.0](https://github.com/rabbitmq-community/rstream/releases/tag/v0.40.0)]
 
 This release focuses on improving stability during reconnection.
