@@ -297,7 +297,7 @@ class MetadataResponse(Frame, is_response=True):
         for item in self.metadata:
             code = item.response_code
             if code > 1 and raise_exception is True:
-                raise ServerError.from_code(code)
+                raise ServerError.from_code(code)()
 
 
 @dataclass

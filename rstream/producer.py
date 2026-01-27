@@ -286,11 +286,11 @@ class Producer(IReliableEntity):
 
         except StreamDoesNotExist as e:
             await self._maybe_clean_up_during_lost_connection(publisher_id)
-            logger.exception("Error in _get_or_create_publisher: stream does not exists anymore")
+            logger.debug("Error in _get_or_create_publisher: stream does not exists anymore", exc_info=e)
             raise e
         except Exception as ex:
             await self._maybe_clean_up_during_lost_connection(publisher_id)
-            logger.exception("error declaring publisher")
+            logger.debug("error declaring publisher", exc_info=ex)
             raise ex
 
         logger.debug("_get_or_create_publisher(): Adding handlers")
