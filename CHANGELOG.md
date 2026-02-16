@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [[1.0.0](https://github.com/rabbitmq-community/rstream/releases/tag/v1.0.0)]
+
+This release promotes rstream to 1.0 and includes producer exception handling improvements.
+
+## 1.0.0 - 2025-02-16
+- [Release 1.0.0](https://github.com/rabbitmq-community/rstream/releases/tag/v1.0.0)
+
+### Changed
+- Promote to 1.0 by @Gsantomaggio in [#267](https://github.com/rabbitmq-community/rstream/pull/267)
+- Refining producer exception logging and bubbling by @dbotwinick in [#265](https://github.com/rabbitmq-community/rstream/pull/265)
+
 ## [[0.40.1](https://github.com/rabbitmq-community/rstream/releases/tag/v0.40.1)]
 
 This release includes bug fixes and improvements to connection handling.
