@@ -18,7 +18,7 @@ This file helps AI agents work effectively on the **rstream** codebase.
 ## Running the project
 
 - **Install**: `poetry install`
-- **Tests**: `poetry run pytest` — requires a running RabbitMQ Stream server (see README for Docker setup)
+- **Tests**: `make test` — requires a running RabbitMQ Stream server (see README for Docker setup)
 - **Linting/formatting**: black, isort, flake8, mypy (config in `pyproject.toml`, `setup.cfg`, and tooling flags in the Makefile / CI workflows)
 
 ## Code style and conventions
