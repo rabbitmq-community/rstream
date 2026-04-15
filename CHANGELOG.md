@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Declare a PEP 517 `[build-system]` in `pyproject.toml` so pip can build wheels from the source distribution with the correct package metadata (version and files), fixing installs with `pip install --no-binary rstream`. ([#270](https://github.com/rabbitmq-community/rstream/issues/270))
+
 ## [[1.0.0](https://github.com/rabbitmq-community/rstream/releases/tag/v1.0.0)]
 
 This release promotes rstream to 1.0 and includes producer exception handling improvements.
