@@ -2,11 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [[1.0.1](https://github.com/rabbitmq-community/rstream/releases/tag/v1.0.1)]
+
+This release fixes source-distribution installs, adds release automation, and documents agent guidance for contributors.
+
+## 1.0.1 - 2026-04-20
+
+- [Release 1.0.1](https://github.com/rabbitmq-community/rstream/releases/tag/v1.0.1)
+
+### Added
+- GitHub Actions workflow for release changelog generation by @Gsantomaggio in [#268](https://github.com/rabbitmq-community/rstream/pull/268)
 
 ### Fixed
+- Declare a PEP 517 `[build-system]` in `pyproject.toml` so pip can build wheels from the source distribution with the correct package metadata (version and files), fixing installs with `pip install --no-binary rstream`. ([#271](https://github.com/rabbitmq-community/rstream/pull/271))
 
-- Declare a PEP 517 `[build-system]` in `pyproject.toml` so pip can build wheels from the source distribution with the correct package metadata (version and files), fixing installs with `pip install --no-binary rstream`. ([#270](https://github.com/rabbitmq-community/rstream/issues/270))
+### Documentation
+- Add `AGENTS.md` for AI agent guidance by @Gsantomaggio in [#269](https://github.com/rabbitmq-community/rstream/pull/269)
 
 ## [[1.0.0](https://github.com/rabbitmq-community/rstream/releases/tag/v1.0.0)]
 
