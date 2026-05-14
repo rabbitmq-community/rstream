@@ -312,7 +312,7 @@ Run the server with the following command:
 ```bash
 docker run -it --rm --name rabbitmq -p 5552:5552 -p 5672:5672 -p 15672:15672 \
     -e RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS='-rabbitmq_stream advertised_host localhost' \
-    rabbitmq:3.13.1-management
+    rabbitmq:4-management
 ```
 
 enable the plugin:
