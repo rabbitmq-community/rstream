@@ -1,9 +1,9 @@
-from unittest.mock import ANY
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 
 from rstream import schema
-from rstream.client import Client
+from rstream.client import Client, ClientPool
 from rstream.constants import Key
 
 pytestmark = pytest.mark.asyncio
@@ -103,3 +103,124 @@ async def exchange_command_versions(client: Client) -> None:
     assert command_version_server.key_command == Key.Publish.value
     assert command_version_server.min_version == expected_min_version
     assert command_version_server.max_version == expected_max_version
+
+
+class _FakeClient:
+    """Stand-in for a real Client that ClientPool.get() can manage without a broker."""
+
+    def __init__(self, alive: bool = True) -> None:
+        self._alive = alive
+        self.is_started = True
+
+    def is_connection_alive(self) -> bool:
+        return self._alive
+
+    async def get_count_available_ids(self) -> int:
+        return 1
+
+    @property
+    def is_locator(self) -> bool:
+        return False
+
+    def add_stream(self, stream: str) -> None:
+        pass
+
+
+def _make_client_pool() -> ClientPool:
+    return ClientPool(
+        host="localhost",
+        port=5552,
+        vhost="/",
+        username="guest",
+        password="guest",
+        frame_max=1024 * 1024,
+        heartbeat=60,
+        load_balancer_mode=False,
+        max_retries=3,
+    )
+
+
+async def test_client_pool_evicts_closed_clients_on_get() -> None:
+    """A closed client left in the pool (e.g. a locator connection closed after a
+    stream_exists() query) is evicted before a new client is created."""
+    pool = _make_client_pool()
+    addr = pool.addr
+    pool._clients[addr].append(_FakeClient(alive=False))
+
+    async def fake_new(**kwargs: object) -> _FakeClient:
+        return _FakeClient(alive=True)
+
+    pool.new = AsyncMock(side_effect=fake_new)  # type: ignore[method-assign]
+
+    for _ in range(5):
+        await pool.get(connection_name=None)
+
+    clients = pool._clients[addr]
+    assert len(clients) == 1
+    assert clients[0].is_connection_alive() is True
+    # only the first get() needed to create a client; the rest reused it
+    assert pool.new.await_count == 1
+
+
+async def test_client_pool_reuses_alive_client() -> None:
+    """An alive client is reused instead of appending a new one."""
+    pool = _make_client_pool()
+    addr = pool.addr
+    live = _FakeClient(alive=True)
+    pool._clients[addr].append(live)
+
+    pool.new = AsyncMock(  # type: ignore[method-assign]
+        side_effect=AssertionError("new() must not be called when a client can be reused")
+    )
+
+    for _ in range(3):
+        got = await pool.get(connection_name=None)
+        assert got is live
+
+    assert len(pool._clients[addr]) == 1
+    pool.new.assert_not_awaited()
+
+
+async def test_client_pool_evicts_only_closed_clients() -> None:
+    """Dead clients are dropped but live ones are still reused."""
+    pool = _make_client_pool()
+    addr = pool.addr
+    live = _FakeClient(alive=True)
+    pool._clients[addr] = [_FakeClient(alive=False), live]
+
+    pool.new = AsyncMock(  # type: ignore[method-assign]
+        side_effect=AssertionError("new() must not be called when a client can be reused")
+    )
+
+    got = await pool.get(connection_name=None)
+
+    assert got is live
+    assert pool._clients[addr] == [live]
+
+
+async def test_client_pool_does_not_grow_across_open_close_cycles() -> None:
+    """Reproduces the Producer.stream_exists() pattern: every call opens a short-lived
+    locator client and closes it right after. The pool must not accumulate one dead
+    Client per call."""
+    pool = _make_client_pool()
+    addr = pool.addr
+    created: list[_FakeClient] = []
+
+    async def fake_new(**kwargs: object) -> _FakeClient:
+        client = _FakeClient(alive=True)
+        created.append(client)
+        return client
+
+    pool.new = AsyncMock(side_effect=fake_new)  # type: ignore[method-assign]
+
+    for _ in range(100):
+        client = await pool.get(connection_name=None)
+        # emulate _close_locator_connection(): a locator holds no streams and is
+        # closed right after the metadata query
+        client._alive = False
+
+    # a fresh connection is opened on every cycle...
+    assert len(created) == 100
+    # ...but the closed clients are evicted instead of being retained forever
+    assert len(pool._clients[addr]) == 1
+    assert pool._clients[addr][0] is created[-1]
