@@ -1,3 +1,4 @@
+from typing import cast
 from unittest.mock import ANY, AsyncMock
 
 import pytest
@@ -140,12 +141,18 @@ def _make_client_pool() -> ClientPool:
     )
 
 
+def _as_client(client: _FakeClient) -> Client:
+    """Type helper: _FakeClient only implements the subset of Client that
+    ClientPool.get() touches, so seed it into the pool as a Client."""
+    return cast(Client, client)
+
+
 async def test_client_pool_evicts_closed_clients_on_get() -> None:
     """A closed client left in the pool (e.g. a locator connection closed after a
     stream_exists() query) is evicted before a new client is created."""
     pool = _make_client_pool()
     addr = pool.addr
-    pool._clients[addr].append(_FakeClient(alive=False))
+    pool._clients[addr].append(_as_client(_FakeClient(alive=False)))
 
     async def fake_new(**kwargs: object) -> _FakeClient:
         return _FakeClient(alive=True)
@@ -166,7 +173,7 @@ async def test_client_pool_reuses_alive_client() -> None:
     """An alive client is reused instead of appending a new one."""
     pool = _make_client_pool()
     addr = pool.addr
-    live = _FakeClient(alive=True)
+    live = _as_client(_FakeClient(alive=True))
     pool._clients[addr].append(live)
 
     pool.new = AsyncMock(  # type: ignore[method-assign]
@@ -185,8 +192,8 @@ async def test_client_pool_evicts_only_closed_clients() -> None:
     """Dead clients are dropped but live ones are still reused."""
     pool = _make_client_pool()
     addr = pool.addr
-    live = _FakeClient(alive=True)
-    pool._clients[addr] = [_FakeClient(alive=False), live]
+    live = _as_client(_FakeClient(alive=True))
+    pool._clients[addr] = [_as_client(_FakeClient(alive=False)), live]
 
     pool.new = AsyncMock(  # type: ignore[method-assign]
         side_effect=AssertionError("new() must not be called when a client can be reused")
@@ -214,10 +221,11 @@ async def test_client_pool_does_not_grow_across_open_close_cycles() -> None:
     pool.new = AsyncMock(side_effect=fake_new)  # type: ignore[method-assign]
 
     for _ in range(100):
-        client = await pool.get(connection_name=None)
+        await pool.get(connection_name=None)
         # emulate _close_locator_connection(): a locator holds no streams and is
-        # closed right after the metadata query
-        client._alive = False
+        # closed right after the metadata query. Each get() creates a fresh client
+        # because the previous one was marked dead here and evicted on the next call.
+        created[-1]._alive = False
 
     # a fresh connection is opened on every cycle...
     assert len(created) == 100
