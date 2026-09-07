@@ -13,6 +13,13 @@ format:
 	poetry run flake8 --exclude=venv,local_tests,docs/examples --max-line-length=120 --ignore=E203,W503,E701,E704,E131
 	poetry run mypy .
 
+clean-rabbitmq-ha-data:
+	cd compose/ha_tls; docker compose down
+	cd compose/ha_tls; rm -rf tls-gen;
+	cd compose/ha_tls; rm -rf data0
+	cd compose/ha_tls; rm -rf data1
+	cd compose/ha_tls; rm -rf data2
+
 rabbitmq-ha-proxy:
 	cd compose/ha_tls; rm -rf tls-gen;
 	cd compose/ha_tls; git clone https://github.com/michaelklishin/tls-gen tls-gen; cd tls-gen/basic; make
