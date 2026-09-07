@@ -23,7 +23,7 @@ class IReliableEntity(ABC):
         pass
 
     def __init__(self):
-        self._recovery_strategy: RecoveryStrategy
+        self._recovery_strategy: RecoveryStrategy  # type: ignore
 
 
 class RecoveryStrategy(ABC):

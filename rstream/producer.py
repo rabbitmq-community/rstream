@@ -78,6 +78,12 @@ class ConfirmationStatus:
 
 logger = logging.getLogger(__name__)
 
+# Sentinel response_code used for ConfirmationStatus objects raised locally
+# when a connection is lost before the broker's PublishConfirm/PublishError
+# frame arrives. Real broker response codes are non-negative, so -1 can't be
+# confused with one.
+_CONNECTION_LOST_RESPONSE_CODE = -1
+
 # Wire-format overhead (in bytes) added by a Publish frame around a batch of
 # messages: frame header (4 bytes length + 2 bytes key + 2 bytes version) +
 # publisher_id (1 byte) + messages count (4 bytes). See encode_publish().
@@ -407,6 +413,28 @@ class Producer(IReliableEntity):
                     )
                 )
 
+        publishing_ids.update([m.publishing_id for m in messages])
+
+        # Register confirmation tracking before the frame is sent: on a fast,
+        # stable connection the broker's PublishConfirm can arrive before this
+        # coroutine is scheduled again, so registering after
+        # send_publish_frame would race with _on_publish_confirm and silently
+        # drop the confirmation for these publishing_ids.
+        future: Optional[asyncio.Future[None]] = None
+        if not sync:
+            logger.debug("_send_batch: Not sync case")
+            if callback is not None:
+                if callback not in self._waiting_for_confirm[publisher.id]:
+                    self._waiting_for_confirm[publisher.id][callback] = set()
+
+                self._waiting_for_confirm[publisher.id][callback].update(publishing_ids)
+
+        # this is just called in case of send_wait
+        else:
+            logger.debug("[producer] Send batch in synchronous mode, waiting for confirms")
+            future = asyncio.Future()
+            self._waiting_for_confirm[publisher.id][future] = publishing_ids.copy()
+
         if len(messages) > 0:
             if self._filter_value_extractor is None:
                 logger.debug("_send_batch: Calling send_publish_frame version 1")
@@ -427,21 +455,8 @@ class Producer(IReliableEntity):
                     version=2,
                 )
 
-            publishing_ids.update([m.publishing_id for m in messages])
-
-        if not sync:
-            logger.debug("_send_batch: Not sync case")
-            if callback is not None:
-                if callback not in self._waiting_for_confirm[publisher.id]:
-                    self._waiting_for_confirm[publisher.id][callback] = set()
-
-                self._waiting_for_confirm[publisher.id][callback].update(publishing_ids)
-
-        # this is just called in case of send_wait
-        else:
-            logger.debug("[producer] Send batch in synchronous mode, waiting for confirms")
-            future: asyncio.Future[None] = asyncio.Future()
-            self._waiting_for_confirm[publisher.id][future] = publishing_ids.copy()
+        if sync:
+            assert future is not None
             await asyncio.wait_for(future, timeout)
 
         return list(publishing_ids)
@@ -463,12 +478,27 @@ class Producer(IReliableEntity):
         messages: list[schema.Message] = []
         current_frame_size = _PUBLISH_FRAME_OVERHEAD
         publishing_ids = set()
-        publishing_ids_callback: dict[CB[ConfirmationStatus], set[int]] = defaultdict(set)
+        # ids of messages currently buffered in `messages` (not yet flushed),
+        # grouped by the callback to notify once they're confirmed.
+        pending_confirmations: dict[CB[ConfirmationStatus], set[int]] = defaultdict(set)
+
+        def _register_pending_confirmations(publisher: _Publisher) -> None:
+            # Register confirmation tracking before the frame is actually
+            # sent: on a fast/stable connection the broker's PublishConfirm
+            # can arrive before this coroutine is scheduled again, so
+            # registering after send_publish_frame/send_frame would race
+            # with _on_publish_confirm and silently drop the confirmation.
+            for cb, ids in pending_confirmations.items():
+                if cb not in self._waiting_for_confirm[publisher.id]:
+                    self._waiting_for_confirm[publisher.id][cb] = set()
+                self._waiting_for_confirm[publisher.id][cb].update(ids)
+            pending_confirmations.clear()
 
         async def _flush(publisher: _Publisher) -> None:
             nonlocal current_frame_size
             if len(messages) == 0:
                 return
+            _register_pending_confirmations(publisher)
             if self._filter_value_extractor is None:
                 logger.debug("_send_batch_async: Not a Filtering case send_publish_frame v1")
                 await publisher.client.send_publish_frame(
@@ -537,7 +567,7 @@ class Producer(IReliableEntity):
                 current_frame_size += message_size
 
                 if item.callback is not None:
-                    publishing_ids_callback[item.callback].add(msg.publishing_id)
+                    pending_confirmations[item.callback].add(msg.publishing_id)
 
             else:
                 logger.debug("_send_batch_async: Compression case")
@@ -545,6 +575,10 @@ class Producer(IReliableEntity):
                 await _flush(publisher)
                 for _ in range(item.entry.messages_count()):
                     publishing_id = publisher.sequence.next()
+
+                if item.callback is not None:
+                    pending_confirmations[item.callback].add(publishing_id)
+                _register_pending_confirmations(publisher)
 
                 logger.debug("_send_batch_async: PublishSubBatching")
                 await publisher.client.send_frame(
@@ -561,16 +595,7 @@ class Producer(IReliableEntity):
                 )
                 publishing_ids.update([publishing_id])
 
-                if item.callback is not None:
-                    publishing_ids_callback[item.callback].add(publishing_id)
-
         await _flush(publisher)
-
-        for callback in publishing_ids_callback:
-            if callback not in self._waiting_for_confirm[publisher.id]:
-                self._waiting_for_confirm[publisher.id][callback] = set()
-
-            self._waiting_for_confirm[publisher.id][callback].update(publishing_ids_callback[callback])
 
         return list(publishing_ids)
 
@@ -745,7 +770,7 @@ class Producer(IReliableEntity):
             if result is not None and inspect.isawaitable(result):
                 await result
 
-        await self.maybe_restart_producer("Metadata Update", frame.metadata_info.stream)
+        asyncio.create_task(self.maybe_restart_producer("Metadata Update", frame.metadata_info.stream))
 
     async def create_stream(
         self,
@@ -896,10 +921,31 @@ class Producer(IReliableEntity):
 
         for stream in disconnection_info.streams.copy():
             reason = disconnection_info.reason
-            await self.maybe_restart_producer(reason, stream)
+            asyncio.create_task(self.maybe_restart_producer(reason, stream))
 
     async def clean_list(self, stream: str) -> None:
         pass
+
+    async def _fail_pending_confirmations(self, publisher_id: int, reason: str) -> None:
+        # Messages already written on the wire but not yet confirmed when the
+        # connection drops would otherwise be lost silently: the publisher_id
+        # is gone, so no PublishConfirm/PublishError frame for it will ever
+        # arrive, and on_publish_confirm would simply never be called for them.
+        waiting = self._waiting_for_confirm.pop(publisher_id, None)
+        if not waiting:
+            return
+
+        for confirmation, ids in waiting.items():
+            if isinstance(confirmation, asyncio.Future):
+                if not confirmation.cancelled():
+                    confirmation.set_exception(exceptions.ServerError(reason))
+                continue
+
+            for message_id in ids:
+                confirmation_status = ConfirmationStatus(message_id, False, _CONNECTION_LOST_RESPONSE_CODE)
+                result = confirmation(confirmation_status)
+                if result is not None and inspect.isawaitable(result):
+                    await result
 
     async def maybe_restart_producer(self, reason: str, stream: str):
         async with self._lock:
@@ -909,6 +955,7 @@ class Producer(IReliableEntity):
             await self._remove_stream_from_client(stream)
 
         if pub is not None:
+            await self._fail_pending_confirmations(pub.id, reason)
             result = self._recovery_strategy.recover(
                 self,
                 stream=stream,
