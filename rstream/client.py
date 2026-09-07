@@ -154,6 +154,10 @@ class BaseClient:
     def is_connection_alive(self) -> bool:
         return self._is_not_closed
 
+    @property
+    def frame_max(self) -> int:
+        return self._frame_max
+
     def add_stream(self, stream: str):
         self._streams.append(stream)
 
