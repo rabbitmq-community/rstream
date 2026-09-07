@@ -78,6 +78,20 @@ class ConfirmationStatus:
 
 logger = logging.getLogger(__name__)
 
+# Wire-format overhead (in bytes) added by a Publish frame around a batch of
+# messages: frame header (4 bytes length + 2 bytes key + 2 bytes version) +
+# publisher_id (1 byte) + messages count (4 bytes). See encode_publish().
+_PUBLISH_FRAME_OVERHEAD = 13
+# Per-message overhead: publishing_id (8 bytes) + data length prefix (4 bytes).
+_MESSAGE_OVERHEAD = 12
+
+
+def _message_frame_size(message: schema.Message) -> int:
+    size = _MESSAGE_OVERHEAD + len(message.data)
+    if message.filter_value is not None:
+        size += 2 + len(message.filter_value.encode("utf-8"))
+    return size
+
 
 class Producer(IReliableEntity):
     def __init__(
@@ -446,9 +460,35 @@ class Producer(IReliableEntity):
         if self._close_called:
             return []
 
-        messages = []
+        messages: list[schema.Message] = []
+        current_frame_size = _PUBLISH_FRAME_OVERHEAD
         publishing_ids = set()
         publishing_ids_callback: dict[CB[ConfirmationStatus], set[int]] = defaultdict(set)
+
+        async def _flush(publisher: _Publisher) -> None:
+            nonlocal current_frame_size
+            if len(messages) == 0:
+                return
+            if self._filter_value_extractor is None:
+                logger.debug("_send_batch_async: Not a Filtering case send_publish_frame v1")
+                await publisher.client.send_publish_frame(
+                    schema.Publish(
+                        publisher_id=publisher.id,
+                        messages=list(messages),
+                    ),
+                )
+            else:
+                logger.debug("_send_batch_async: Filtering case send_publish_frame v2")
+                await publisher.client.send_publish_frame(
+                    schema.Publish(
+                        publisher_id=publisher.id,
+                        messages=list(messages),
+                    ),
+                    version=2,
+                )
+            publishing_ids.update([m.publishing_id for m in messages])
+            messages.clear()
+            current_frame_size = _PUBLISH_FRAME_OVERHEAD
 
         for item in batch:
             async with self._lock:
@@ -468,23 +508,33 @@ class Producer(IReliableEntity):
                     msg.publishing_id = publisher.sequence.next()
                 if self._filter_value_extractor is None:
                     logger.debug("_send_batch_async: Filtering not active ingesting messages list")
-                    messages.append(
-                        schema.Message(
-                            publishing_id=msg.publishing_id,
-                            filter_value=None,
-                            data=bytes(msg),
-                        )
+                    new_message = schema.Message(
+                        publishing_id=msg.publishing_id,
+                        filter_value=None,
+                        data=bytes(msg),
                     )
                 else:
                     logger.debug("_send_batch_async: Filtering active ingesting messages list")
                     value_filter: str = await self._filter_value_extractor(msg)
-                    messages.append(
-                        schema.Message(
-                            publishing_id=msg.publishing_id,
-                            filter_value=value_filter,
-                            data=bytes(msg),
-                        )
+                    new_message = schema.Message(
+                        publishing_id=msg.publishing_id,
+                        filter_value=value_filter,
+                        data=bytes(msg),
                     )
+
+                # Respect the connection's negotiated frame_max: flush the
+                # currently buffered messages before they would push the next
+                # Publish frame past the broker's limit.
+                message_size = _message_frame_size(new_message)
+                if messages and current_frame_size + message_size > publisher.client.frame_max:
+                    logger.debug(
+                        "_send_batch_async: frame_max reached, flushing %d buffered messages",
+                        len(messages),
+                    )
+                    await _flush(publisher)
+
+                messages.append(new_message)
+                current_frame_size += message_size
 
                 if item.callback is not None:
                     publishing_ids_callback[item.callback].add(msg.publishing_id)
@@ -492,27 +542,7 @@ class Producer(IReliableEntity):
             else:
                 logger.debug("_send_batch_async: Compression case")
                 compression_codec = item.entry
-                if len(messages) > 0:
-                    if self._filter_value_extractor is None:
-                        logger.debug("_send_batch_async: Not a filtering case publishing frame")
-                        await publisher.client.send_publish_frame(
-                            schema.Publish(
-                                publisher_id=publisher.id,
-                                messages=messages,
-                            ),
-                        )
-                    else:
-                        logger.debug("_send_batch_async: Filtering case ingesting messages list")
-                        value_filter = await self._filter_value_extractor(msg)
-                        messages.append(
-                            schema.Message(
-                                publishing_id=msg.publishing_id,  # type: ignore[arg-type]
-                                filter_value=value_filter,
-                                data=bytes(msg),
-                            )
-                        )
-                    # publishing_ids.update([m.publishing_id for m in messages])
-                    messages.clear()
+                await _flush(publisher)
                 for _ in range(item.entry.messages_count()):
                     publishing_id = publisher.sequence.next()
 
@@ -534,25 +564,7 @@ class Producer(IReliableEntity):
                 if item.callback is not None:
                     publishing_ids_callback[item.callback].add(publishing_id)
 
-        if len(messages) > 0:
-            if self._filter_value_extractor is None:
-                logger.debug("_send_batch_async: Not a Filtering case send_publish_frame v1")
-                await publisher.client.send_publish_frame(
-                    schema.Publish(
-                        publisher_id=publisher.id,
-                        messages=messages,
-                    ),
-                )
-            else:
-                logger.debug("_send_batch_async: Filtering case send_publish_frame v2")
-                await publisher.client.send_publish_frame(
-                    schema.Publish(
-                        publisher_id=publisher.id,
-                        messages=messages,
-                    ),
-                    version=2,
-                )
-            publishing_ids.update([m.publishing_id for m in messages])
+        await _flush(publisher)
 
         for callback in publishing_ids_callback:
             if callback not in self._waiting_for_confirm[publisher.id]:

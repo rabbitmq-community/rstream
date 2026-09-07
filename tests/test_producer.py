@@ -21,6 +21,8 @@ from rstream import (
     amqp_decoder,
     exceptions,
 )
+from rstream.client import Client
+from rstream.encoding import encode_publish
 
 from .util import (
     http_api_delete_connection_and_check,
@@ -225,6 +227,71 @@ async def test_publishing_sequence_async(stream: str, producer: Producer, consum
 
     await wait_for(lambda: len(captured) == 3)
     assert captured == [b"one", b"two", b"three"]
+
+
+async def test_send_splits_batch_exceeding_frame_max(stream: str, consumer: Consumer) -> None:
+    # With a small frame_max, a buffered batch whose messages would together
+    # exceed it must be split into several Publish frames instead of being
+    # sent (and rejected/dropped by the broker) as a single oversized frame.
+    frame_max = 5000
+    message_size = 1000
+    num_messages = 40
+    payload = b"x" * message_size
+
+    captured: list[bytes] = []
+    await consumer.subscribe(
+        stream, callback=lambda message, message_context: captured.append(bytes(message))
+    )
+
+    producer = Producer("localhost", username="guest", password="guest", frame_max=frame_max)
+    await producer.start()
+    try:
+        for _ in range(num_messages):
+            await producer.send(stream, payload)
+
+        await wait_for(lambda: len(captured) == num_messages, 5, 0.5)
+    finally:
+        await producer.close()
+
+    assert captured == [payload] * num_messages
+
+
+async def test_send_batch_async_frames_never_exceed_frame_max(
+    stream: str, consumer: Consumer, monkeypatch
+) -> None:
+    frame_max = 5000
+    message_size = 1000
+    num_messages = 40
+    payload = b"x" * message_size
+
+    captured: list[bytes] = []
+    await consumer.subscribe(
+        stream, callback=lambda message, message_context: captured.append(bytes(message))
+    )
+
+    sent_frame_sizes: list[int] = []
+    original_send_publish_frame = Client.send_publish_frame
+
+    async def spy_send_publish_frame(self, frame, version=1):
+        # Measure the exact bytes that will be written on the wire for this
+        # frame, the same way Connection.write_frame_publish() does.
+        sent_frame_sizes.append(len(encode_publish(frame, version)))
+        await original_send_publish_frame(self, frame, version)
+
+    monkeypatch.setattr(Client, "send_publish_frame", spy_send_publish_frame)
+
+    producer = Producer("localhost", username="guest", password="guest", frame_max=frame_max)
+    await producer.start()
+    try:
+        for _ in range(num_messages):
+            await producer.send(stream, payload)
+
+        await wait_for(lambda: len(captured) == num_messages, 5, 0.5)
+    finally:
+        await producer.close()
+
+    assert len(sent_frame_sizes) > 1, "expected the batch to be split across multiple frames"
+    assert all(size <= frame_max for size in sent_frame_sizes)
 
 
 async def test_publish_deduplication(stream: str, producer: Producer, consumer: Consumer) -> None:
