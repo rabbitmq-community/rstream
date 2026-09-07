@@ -689,7 +689,7 @@ def _fake_publisher(stream: str, send_publish_frame) -> _Publisher:
         reference=None,
         stream=stream,
         sequence=utils.MonotonicSeq(),
-        client=SimpleNamespace(frame_max=1024 * 1024, send_publish_frame=send_publish_frame),  #type:ignore
+        client=SimpleNamespace(frame_max=1024 * 1024, send_publish_frame=send_publish_frame),  # type:ignore
     )
 
 
