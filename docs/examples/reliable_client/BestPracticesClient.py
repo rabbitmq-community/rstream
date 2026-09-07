@@ -47,11 +47,11 @@ async def print_test_variables():
         await asyncio.sleep(5)
         # the number of confirmed messages should be the same as the total messages we sent
         logging.info(
-            "[Messages confirmed: {}, Messages Error:{}] Total: {}".format(
+            "[Messages confirmed: {:,}, Messages Error: {:,}] Total: {:,}".format(
                 confirmed_count, error_count, confirmed_count + error_count
             )
         )
-        logging.info("[Messages consumed: {}]".format(messages_consumed))
+        logging.info("[Messages consumed: {:,}]".format(messages_consumed))
 
 
 # Routing instruction for SuperStream Producer
@@ -160,11 +160,13 @@ async def make_consumer(rabbitmq_data: dict) -> Consumer | SuperStreamConsumer: 
 # Where the confirmation happens
 async def _on_publish_confirm_client(confirmation: ConfirmationStatus) -> None:
     global confirmed_count
+    global error_count
     if confirmation.is_confirmed:
         confirmed_count = confirmed_count + 1
     else:
+        error_count = error_count + 1
         print(
-            "message id: {} not confirmed. Response code {}".format(
+            "message id: {:,} not confirmed. Response code {}".format(
                 confirmation.message_id, confirmation.response_code
             )
         )
@@ -243,12 +245,17 @@ async def publish(rabbitmq_configuration: dict):
                 )
                 error_count = error_count + 1
                 await asyncio.sleep(2)
-
     # await producer.close()  # type: ignore
 
     end_time = time.perf_counter()
+    elapsed = end_time - start_time
+    total_sent = messages_per_producer * producers
+    rate = total_sent / elapsed if elapsed > 0 else 0
     print(
-        f"Sent {messages_per_producer} messages for each of the {producers} producers in {end_time - start_time:0.4f} seconds"
+        "Sent {:,} messages for each of the {:,} producers ({:,} messages total) "
+        "in {:0.4f} seconds ({:,.0f} msg/s)".format(
+            messages_per_producer, producers, total_sent, elapsed, rate
+        )
     )
 
 
