@@ -5,12 +5,14 @@ import asyncio
 import logging
 import time
 from functools import partial
+from types import SimpleNamespace
 
 import pytest
 
 from rstream import (
     AMQPMessage,
     CompressionType,
+    ConfirmationStatus,
     Consumer,
     OnClosedErrorInfo,
     Producer,
@@ -20,9 +22,12 @@ from rstream import (
     SuperStreamProducer,
     amqp_decoder,
     exceptions,
+    schema,
+    utils,
 )
 from rstream.client import Client
 from rstream.encoding import encode_publish
+from rstream.producer import _MessageNotification, _Publisher
 
 from .util import (
     http_api_delete_connection_and_check,
@@ -608,6 +613,151 @@ async def test_producer_connection_broke(stream: str, consumer: Consumer) -> Non
     await wait_for(lambda: len(streams_disconnected) == 1, 5, 1)
     await wait_for(lambda: len(captured) == 500, 5, 1)
     await producer_broke.close()
+
+
+async def test_producer_reconnects_concurrently_for_streams_sharing_a_connection(monkeypatch) -> None:
+    # Streams that share a broken connection must all start recovering at once.
+    # If recovery were awaited sequentially, stream N+1 wouldn't even start
+    # recovering until stream N's backoff/reconnect attempt (which can take
+    # several seconds) finishes, so streams sharing a connection could be
+    # starved of reconnection if the connection keeps getting killed faster
+    # than the serialized chain of recoveries can complete.
+    producer = Producer("localhost", username="guest", password="guest")
+
+    shared_streams = ["shared-stream-0", "shared-stream-1", "shared-stream-2"]
+    recovery_start_times: dict[str, float] = {}
+    recovery_delay = 0.3
+
+    async def fake_maybe_restart_producer(reason: str, stream: str) -> None:
+        recovery_start_times[stream] = time.monotonic()
+        await asyncio.sleep(recovery_delay)
+
+    monkeypatch.setattr(producer, "maybe_restart_producer", fake_maybe_restart_producer)
+
+    handler_start = time.monotonic()
+    await producer._on_connection_closed(
+        OnClosedErrorInfo(reason="Connection Closed", streams=shared_streams)
+    )
+    handler_duration = time.monotonic() - handler_start
+
+    # the handler must return almost immediately: recovery is scheduled in the
+    # background instead of being awaited one stream at a time
+    assert handler_duration < recovery_delay
+
+    await wait_for(lambda: len(recovery_start_times) == len(shared_streams), 2, 0.05)
+
+    # all streams must start recovering together, not one after another
+    spread = max(recovery_start_times.values()) - min(recovery_start_times.values())
+    assert spread < recovery_delay
+
+
+async def test_fail_pending_confirmations_reports_lost_messages_on_disconnect() -> None:
+    # Messages that were sent (registered in _waiting_for_confirm) but whose
+    # PublishConfirm/PublishError frame never arrives because the connection
+    # dropped must still be reported to the caller as failed. Otherwise
+    # on_publish_confirm is never called for them: they are neither confirmed
+    # nor counted as errors, they just vanish, so confirmed_count silently
+    # falls behind the number of messages actually sent.
+    producer = Producer("localhost", username="guest", password="guest")
+
+    confirmed: list[ConfirmationStatus] = []
+
+    async def on_publish_confirm(confirmation: ConfirmationStatus) -> None:
+        confirmed.append(confirmation)
+
+    publisher_id = 0
+    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    producer._waiting_for_confirm[publisher_id][on_publish_confirm] = {1, 2, 3}
+    producer._waiting_for_confirm[publisher_id][future] = {4, 5}
+
+    await producer._fail_pending_confirmations(publisher_id, "Connection Closed")
+
+    assert {c.message_id for c in confirmed} == {1, 2, 3}
+    assert all(c.is_confirmed is False for c in confirmed)
+
+    assert future.done()
+    with pytest.raises(exceptions.ServerError):
+        future.result()
+
+    # the entry must be cleared so a stale publisher_id can't leak state
+    assert publisher_id not in producer._waiting_for_confirm
+
+
+def _fake_publisher(stream: str, send_publish_frame) -> _Publisher:
+    return _Publisher(
+        id=0,
+        reference=None,
+        stream=stream,
+        sequence=utils.MonotonicSeq(),
+        client=SimpleNamespace(frame_max=1024 * 1024, send_publish_frame=send_publish_frame),
+    )
+
+
+async def test_send_batch_does_not_drop_confirmation_racing_with_send(monkeypatch) -> None:
+    # Regression test: on a fast/stable connection the broker can send back
+    # PublishConfirm as soon as send_publish_frame is awaited, before this
+    # coroutine gets a chance to run again. Confirmation tracking must be
+    # registered in _waiting_for_confirm *before* the frame is sent, otherwise
+    # the incoming PublishConfirm finds nothing to match and the callback is
+    # silently never invoked even though the broker confirmed the message.
+    producer = Producer("localhost", username="guest", password="guest")
+    stream = "race-stream"
+
+    async def fake_send_publish_frame(frame, version=1):
+        publishing_ids = [m.publishing_id for m in frame.messages]
+        await producer._on_publish_confirm(
+            schema.PublishConfirm(publisher_id=frame.publisher_id, publishing_ids=publishing_ids),
+            publisher,
+        )
+
+    publisher = _fake_publisher(stream, fake_send_publish_frame)
+
+    async def fake_get_or_create_publisher(stream_name, publisher_name=None):
+        return publisher
+
+    monkeypatch.setattr(producer, "_get_or_create_publisher", fake_get_or_create_publisher)
+
+    confirmed: list[ConfirmationStatus] = []
+
+    async def on_publish_confirm(confirmation: ConfirmationStatus) -> None:
+        confirmed.append(confirmation)
+
+    await producer._send_batch(stream, [b"hello"], callback=on_publish_confirm, sync=False)
+
+    assert len(confirmed) == 1
+    assert confirmed[0].is_confirmed is True
+
+
+async def test_send_async_does_not_drop_confirmation_racing_with_send(monkeypatch) -> None:
+    # Same race as above but for the buffered/async path used by
+    # Producer.send(), which is what BestPracticesClient.py relies on.
+    producer = Producer("localhost", username="guest", password="guest")
+    stream = "race-stream-async"
+
+    async def fake_send_publish_frame(frame, version=1):
+        publishing_ids = [m.publishing_id for m in frame.messages]
+        await producer._on_publish_confirm(
+            schema.PublishConfirm(publisher_id=frame.publisher_id, publishing_ids=publishing_ids),
+            publisher,
+        )
+
+    publisher = _fake_publisher(stream, fake_send_publish_frame)
+
+    async def fake_get_or_create_publisher(stream_name, publisher_name=None):
+        return publisher
+
+    monkeypatch.setattr(producer, "_get_or_create_publisher", fake_get_or_create_publisher)
+
+    confirmed: list[ConfirmationStatus] = []
+
+    async def on_publish_confirm(confirmation: ConfirmationStatus) -> None:
+        confirmed.append(confirmation)
+
+    batch = [_MessageNotification(entry=b"hello", callback=on_publish_confirm) for _ in range(50)]
+    await producer._send_batch_async(stream, batch)
+
+    assert len(confirmed) == 50
+    assert all(c.is_confirmed is True for c in confirmed)
 
 
 # flaky test
