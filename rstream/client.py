@@ -757,6 +757,18 @@ class ClientPool:
         sasl_configuration_mechanism = sasl_configuration_mechanism or self._sasl_configuration_mechanism
         is_locator_request = locator_request
 
+        # Evict clients that are no longer connected. Short-lived clients (e.g. the
+        # locator connections opened by stream_exists()/metadata queries and closed
+        # right after use) would otherwise accumulate in _clients forever: nothing
+        # removes a closed client until ClientPool.close(), so every such call leaks
+        # one Client for the lifetime of the pool.
+        if desired_addr in self._clients:
+            self._clients[desired_addr] = [
+                client for client in self._clients[desired_addr] if client.is_connection_alive()
+            ]
+            if not self._clients[desired_addr]:
+                del self._clients[desired_addr]
+
         # check if at least one client of desired_addr is connected
         if desired_addr in self._clients:
             for client in self._clients[desired_addr]:

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+- `ClientPool.get()` now evicts clients whose connection is no longer alive before
+  scanning or creating one. Short-lived locator connections (e.g. the per-call
+  `stream_exists()`/metadata probes and recovery checks) are closed after use but
+  were never removed from the pool, so each call leaked one `Client` (~1 KB) and
+  memory grew linearly with the number of locator calls for the lifetime of the
+  producer.
+
 ## [[1.0.1](https://github.com/rabbitmq-community/rstream/releases/tag/v1.0.1)]
 
 This release fixes source-distribution installs, adds release automation, and documents agent guidance for contributors.

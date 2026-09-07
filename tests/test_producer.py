@@ -98,6 +98,21 @@ async def test_delete_super_stream_doesnt_exist(super_stream_producer: SuperStre
         pytest.fail("Unexpected error")
 
 
+async def test_stream_exists_does_not_accumulate_locator_clients(producer: Producer) -> None:
+    """Regression: Producer.stream_exists() opens and immediately closes a short-lived
+    locator connection on every call. Those closed clients must be evicted from
+    ClientPool instead of accumulating (one leaked Client per call) for the lifetime
+    of the producer."""
+    stream_name = "test-stream-locator-pool-{}".format(time.time())
+    for _ in range(10):
+        # a stream that does not exist makes stream_exists() return False, so the
+        # producer never sends and no partition/long-lived client is created
+        assert await producer.stream_exists(stream_name) is False
+
+    total_clients = sum(len(clients) for clients in producer._pool._clients.values())
+    assert total_clients == 1
+
+
 async def test_publishing_sequence(stream: str, producer: Producer, consumer: Consumer) -> None:
     captured: list[bytes] = []
     await consumer.subscribe(
