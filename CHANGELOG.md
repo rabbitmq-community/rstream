@@ -2,15 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 1.1.0 - 2026-09-09
+
+- [Release 1.1.0](https://github.com/rabbitmq-community/rstream/releases/tag/v1.1.0)
 
 ### Fixed
+- Producer reconnection and confirmation tracking had races that could leave `confirmed_count` behind the number of messages actually sent, or silently drop pending confirmations during a disconnect, by @Gsantomaggio in [#276](https://github.com/rabbitmq-community/rstream/pull/276)
+- `_publish_buffered_messages`/`_send_batch_async` built a single Publish frame 
+   from an entire buffered batch, ignoring the connection's negotiated `frame_max`, 
+   causing the broker to close the connection with "frame too large" and silently lose buffered messages. Frames are now flushed before exceeding `frame_max` by @Gsantomaggio in [#275](https://github.com/rabbitmq-community/rstream/pull/275)
 - `ClientPool.get()` now evicts clients whose connection is no longer alive before
   scanning or creating one. Short-lived locator connections (e.g. the per-call
   `stream_exists()`/metadata probes and recovery checks) are closed after use but
   were never removed from the pool, so each call leaked one `Client` (~1 KB) and
   memory grew linearly with the number of locator calls for the lifetime of the
-  producer.
+  producer, by @donbowman in [#273](https://github.com/rabbitmq-community/rstream/pull/273)
 
 ## [[1.0.1](https://github.com/rabbitmq-community/rstream/releases/tag/v1.0.1)]
 
