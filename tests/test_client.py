@@ -232,3 +232,24 @@ async def test_client_pool_does_not_grow_across_open_close_cycles() -> None:
     # ...but the closed clients are evicted instead of being retained forever
     assert len(pool._clients[addr]) == 1
     assert pool._clients[addr][0] is created[-1]
+
+
+async def test_client_pool_new_closes_client_when_authenticate_fails(monkeypatch) -> None:
+    """A client whose authenticate() raises (e.g. OAuth2 timeout) must still be
+    closed so its socket and listener task don't leak (issue #278)."""
+    pool = _make_client_pool()
+
+    start_mock = AsyncMock()
+    close_mock = AsyncMock()
+    authenticate_mock = AsyncMock(side_effect=TimeoutError("oauth2 timeout"))
+
+    monkeypatch.setattr(Client, "start", start_mock)
+    monkeypatch.setattr(Client, "authenticate", authenticate_mock)
+    monkeypatch.setattr(Client, "close", close_mock)
+
+    with pytest.raises(TimeoutError):
+        await pool.new(connection_name=None, addr=pool.addr)
+
+    start_mock.assert_awaited_once()
+    authenticate_mock.assert_awaited_once()
+    close_mock.assert_awaited_once()

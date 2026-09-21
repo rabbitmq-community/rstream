@@ -875,12 +875,16 @@ class ClientPool:
             sasl_configuration_mechanism=sasl_configuration_mechanism,
             max_clients_by_connections=max_clients_by_connections,
         )
-        await client.start()
-        await client.authenticate(
-            vhost=self.vhost,
-            username=self.username,
-            password=self.password,
-        )
+        try:
+            await client.start()
+            await client.authenticate(
+                vhost=self.vhost,
+                username=self.username,
+                password=self.password,
+            )
+        except BaseException:
+            await client.close()
+            raise
         return client
 
     async def close(self) -> None:

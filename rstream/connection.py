@@ -45,7 +45,8 @@ class Connection:
             raise ConnectionError(f"Could not connect to {self.host}:{self.port}")
 
     async def close(self) -> None:
-        assert self._writer is not None
+        if self._writer is None:
+            return
         self._writer.close()
         await self._writer.wait_closed()
 
