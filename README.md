@@ -128,6 +128,16 @@ All the producer methods to send messages (send, send_batch, send_wait) takes a 
 Example:
 - [producer with deduplication](https://github.com/qweeze/rstream/blob/master/docs/examples/deduplication/producer_ded.py)
 
+### Stream initial offset
+
+Requires RabbitMQ 4.4.0 or later. By default the first message of a stream has offset 0; `initial_offset` sets the offset of the first message when the stream is created:
+
+```python
+await producer.create_stream("my-stream", initial_offset=1000)
+```
+
+The value must be an integer between 0 and 2^62 - 1, otherwise a `ValueError` is raised. See the [initial offset example](https://github.com/qweeze/rstream/blob/master/docs/examples/initial_offset/producer_consumer_initial_offset.py).
+
 ## Consuming messages
 
 See [consumer examples](https://github.com/qweeze/rstream/blob/master/docs/examples/basic_consumers)  for basic consumer and consumers with different offsets.

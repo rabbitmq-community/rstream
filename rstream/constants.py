@@ -71,6 +71,12 @@ class ConsumerOffsetSpecification:
     offset: Optional[int] = None
 
 
+# Name of the stream creation argument that sets the offset of the first message
+# (requires RabbitMQ 4.4.0 or later).
+STREAM_INITIAL_OFFSET_ARGUMENT = "stream-initial-offset"
+# Same upper bound as the broker: (1 << 62) - 1
+MAX_STREAM_INITIAL_OFFSET = (1 << 62) - 1
+
 SUBSCRIPTION_PROPERTY_FILTER_PREFIX = "filter."
 SUBSCRIPTION_PROPERTY_MATCH_UNFILTERED = "match-unfiltered"
 

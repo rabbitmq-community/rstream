@@ -777,10 +777,11 @@ class Producer(IReliableEntity):
         stream: str,
         arguments: Optional[dict[str, Any]] = None,
         exists_ok: bool = False,
+        initial_offset: Optional[int] = None,
     ) -> None:
         async with self._lock:
             try:
-                await (await self.default_client).create_stream(stream, arguments)
+                await (await self.default_client).create_stream(stream, arguments, initial_offset)
             except exceptions.StreamAlreadyExists:
                 if not exists_ok:
                     raise
