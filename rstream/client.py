@@ -34,9 +34,37 @@ from . import (
     utils,
 )
 from .connection import Connection, ConnectionClosed
-from .constants import MAX_ITEM_ALLOWED, SlasMechanism
+from .constants import (
+    MAX_ITEM_ALLOWED,
+    MAX_STREAM_INITIAL_OFFSET,
+    STREAM_INITIAL_OFFSET_ARGUMENT,
+    SlasMechanism,
+)
 from .schema import OffsetSpecification
 from .utils import AtomicInteger, OnClosedErrorInfo
+
+
+def stream_arguments_with_initial_offset(
+    arguments: Optional[dict[str, Any]], initial_offset: Optional[int]
+) -> dict[str, Any]:
+    """Return a copy of the stream arguments, adding ``stream-initial-offset`` if requested.
+
+    ``initial_offset`` must be an integer in ``[0, 2**62 - 1]``, the same range accepted by the broker.
+    Raises ``ValueError`` otherwise. The argument requires RabbitMQ 4.4.0 or later.
+    """
+    result = dict(arguments) if arguments else {}
+    if initial_offset is None:
+        return result
+
+    if isinstance(initial_offset, bool) or not isinstance(initial_offset, int):
+        raise ValueError(f"initial_offset must be an integer, given: {initial_offset!r}")
+    if initial_offset < 0 or initial_offset > MAX_STREAM_INITIAL_OFFSET:
+        raise ValueError(
+            f"initial_offset must be between 0 and {MAX_STREAM_INITIAL_OFFSET}, given: {initial_offset}"
+        )
+    result[STREAM_INITIAL_OFFSET_ARGUMENT] = initial_offset
+    return result
+
 
 FT = TypeVar("FT", bound=schema.Frame)
 HT = Annotated[
@@ -453,9 +481,14 @@ class Client(BaseClient):
         self.server_properties.update(open_response)
         return open_response
 
-    async def create_stream(self, stream: str, arguments: Optional[dict[str, Any]] = None) -> None:
-        if arguments is None:
-            arguments = {}
+    async def create_stream(
+        self,
+        stream: str,
+        arguments: Optional[dict[str, Any]] = None,
+        initial_offset: Optional[int] = None,
+    ) -> None:
+        # validate before touching the network. initial_offset requires RabbitMQ >= 4.4.0
+        arguments = stream_arguments_with_initial_offset(arguments, initial_offset)
 
         await self.sync_request(
             schema.Create(

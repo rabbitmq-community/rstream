@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- Support the `stream-initial-offset` stream argument (RabbitMQ 4.4.0+) through the new `initial_offset` parameter of `create_stream()` on `Client`, `Producer` and `Consumer`. Values outside `[0, 2**62 - 1]` raise `ValueError`. See [#277](https://github.com/rabbitmq-community/rstream/issues/277)
+
 ## 1.1.1 - 2026-10-19
 
 - [Release 1.1.1](https://github.com/rabbitmq-community/rstream/releases/tag/v1.1.1)
